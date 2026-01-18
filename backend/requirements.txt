@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+google-genai
+python-dotenv
+pydantic
+google-adk
+litellm
+ddgs
