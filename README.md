@@ -2,6 +2,9 @@
 
 A multi-agent travel planning application that helps you find destinations, hotels, and create itineraries using AI.
 
+<img width="1908" height="1626" alt="image" src="https://github.com/user-attachments/assets/736a9cf7-2789-4700-aa06-9221b9eceaf7" />
+
+
 ## Project Structure
 
 - `frontend/`: React + Vite frontend application.
