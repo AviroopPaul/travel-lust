@@ -14,7 +14,7 @@ def web_search(query: str, max_results: int = 5) -> str:
         max_results: Maximum number of results to return.
 
     Returns:
-        A string containing the search results (titles and snippets).
+        A string containing the search results (titles, URLs, snippets).
     """
     print(f"[SearchTool] Searching for: {query}")
     try:
@@ -28,7 +28,10 @@ def web_search(query: str, max_results: int = 5) -> str:
         for i, res in enumerate(results, 1):
             title = res.get('title', 'No Title')
             body = res.get('body', 'No Description')
-            formatted_results.append(f"{i}. {title}\n   {body}")
+            url = res.get('href') or res.get('url') or res.get('link') or 'No URL'
+            formatted_results.append(
+                f"{i}. {title}\n   URL: {url}\n   {body}"
+            )
 
         return "\n\n".join(formatted_results)
     except Exception as e:

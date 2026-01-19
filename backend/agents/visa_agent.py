@@ -32,7 +32,7 @@ class VisaAgent(Agent):
 TASK: Provide accurate visa requirements for traveling from {origin} to {destination}.
 
 TOOL USAGE:
-- Make exactly 1 search call with query: "{origin} citizens visa requirements {destination} {current_date[:4]}"
+- Make exactly 1 search call with query: "{origin} citizens visa requirements {destination} official visa application site {current_date[:4]}"
 - DO NOT search more than once.
 
 AFTER SEARCHING, you MUST respond with ONLY a JSON object (no explanation, no markdown):
@@ -41,7 +41,7 @@ AFTER SEARCHING, you MUST respond with ONLY a JSON object (no explanation, no ma
   "required": true or false,
   "requirements": ["requirement 1", "requirement 2", ...],
   "processing_time": "X business days",
-  "application_url": "https://official-visa-site.com",
+  "application_url": "https://official-government-visa-site.gov",
   "application_steps": ["Step 1", "Step 2", ...]
 }}
 
@@ -49,6 +49,10 @@ IMPORTANT:
 - Output ONLY valid JSON, nothing else
 - No markdown code blocks, no explanations
 - Use real data from search results
+- The "application_url" MUST be copied from a search result URL
+- Prefer official government, immigration, embassy, or consulate domains
+- Never use generic sources (search engines, Wikipedia, travel blogs, visa brokers)
+- If no official URL is found, set "application_url" to null
 - If origin is unknown, assume tourist visa requirements""",
             tools=[web_search],
             output_schema=VisaInfo,
