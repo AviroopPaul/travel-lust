@@ -239,19 +239,9 @@ function App() {
 
                         {/* Destination Tag (shown after search) */}
                         {hasSearched && !loading && tripPlan && (
-                            <div className="mt-4 flex items-center justify-center gap-3 text-[var(--color-text-muted)] animate-fade-in">
+                            <div className="mt-4 flex items-center justify-center gap-4 text-[var(--color-text-muted)] animate-fade-in">
                                 <span className="text-sm">Trip to</span>
-                                <span className="font-serif text-[var(--color-text)] text-lg">{tripPlan.destination}</span>
-                                <span className="text-[var(--color-border)]">•</span>
-                                <button
-                                    onClick={() => setIsItineraryOpen(true)}
-                                    className="text-[var(--color-accent)] hover:text-[var(--color-accent-hover)] text-sm flex items-center gap-1.5 transition-colors"
-                                >
-                                    <span>View Itinerary</span>
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                        <path d="M5 12h14M12 5l7 7-7 7"/>
-                                    </svg>
-                                </button>
+                                <span className="font-serif text-[var(--color-text)] text-4xl">{tripPlan.destination}</span>
                             </div>
                         )}
                     </div>

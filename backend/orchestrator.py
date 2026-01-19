@@ -10,7 +10,7 @@ from typing import Dict, Any, List
 
 from .gemini_client import get_gemini_client
 from .agents import TravelAgent, MemoryAgent
-from .models import TripPlan, UserQuery, FlightOption, HotelOption
+from .models import TripPlan, UserQuery, FlightOption, HotelOption, ItineraryDay
 
 
 class Orchestrator:
@@ -51,7 +51,7 @@ class Orchestrator:
         return 0.0
 
     def _calculate_total_budget(self, flights: List[FlightOption], hotels: List[HotelOption],
-                                days: int, currency: str) -> str:
+                                itinerary: List[ItineraryDay], days: int, currency: str) -> str:
         """Calculate a rough total budget estimate"""
         total = 0.0
 
@@ -61,6 +61,11 @@ class Orchestrator:
         if hotels:
             nightly_rate = self._extract_price(hotels[0].price_per_night)
             total += nightly_rate * (days or 3)
+
+        if itinerary:
+            for day in itinerary:
+                for activity in day.activities:
+                    total += self._extract_price(activity.price)
 
         return f"{currency} {total:,.2f}"
 
@@ -96,8 +101,9 @@ class Orchestrator:
         # Calculate total budget estimate
         flights = [FlightOption(**f) for f in result.get("flights", [])]
         hotels = [HotelOption(**h) for h in result.get("hotels", [])]
+        itinerary = [ItineraryDay(**i) for i in result.get("itinerary", [])]
         total_budget = self._calculate_total_budget(
-            flights, hotels, user_query.days, user_query.currency
+            flights, hotels, itinerary, user_query.days, user_query.currency
         )
 
         # Construct Final Trip Plan
