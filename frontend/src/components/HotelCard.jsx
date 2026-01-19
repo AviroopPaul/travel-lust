@@ -7,7 +7,7 @@ const HotelCard = ({ hotel, currency }) => {
     return (
         <div className="glass rounded-xl overflow-hidden hover:bg-[var(--color-surface-2)] transition-all duration-200 group">
             {/* Image */}
-            {hotel.image_url && !imageError && (
+            {hotel.image_url && !imageError ? (
                 <div className="relative h-36 overflow-hidden">
                     <img 
                         src={hotel.image_url}
@@ -21,6 +21,27 @@ const HotelCard = ({ hotel, currency }) => {
                         <span className="text-white">{hotel.rating}</span>
                     </div>
                 </div>
+            ) : (
+                <div className="relative h-36 overflow-hidden bg-[var(--color-surface-2)] flex flex-col items-center justify-center">
+                    <svg 
+                        width="40" 
+                        height="40" 
+                        viewBox="0 0 24 24" 
+                        fill="none" 
+                        stroke="currentColor" 
+                        strokeWidth="1.5" 
+                        className="text-[var(--color-text-subtle)] mb-2"
+                    >
+                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                        <circle cx="8.5" cy="8.5" r="1.5"/>
+                        <polyline points="21 15 16 10 5 21"/>
+                    </svg>
+                    <span className="text-xs text-[var(--color-text-subtle)]">No image available</span>
+                    <div className="absolute bottom-2 left-3 flex items-center gap-1 text-amber-400 text-sm">
+                        <span>★</span>
+                        <span className="text-[var(--color-text-muted)]">{hotel.rating}</span>
+                    </div>
+                </div>
             )}
             
             {/* Content */}
@@ -31,13 +52,6 @@ const HotelCard = ({ hotel, currency }) => {
                         {convertPrice(hotel.price_per_night, currency)}
                     </span>
                 </div>
-                
-                {(imageError || !hotel.image_url) && (
-                    <div className="flex items-center gap-1 text-amber-400 text-sm mb-2">
-                        <span>★</span>
-                        <span className="text-[var(--color-text-muted)]">{hotel.rating}</span>
-                    </div>
-                )}
                 
                 <p className="text-sm text-[var(--color-text-muted)] line-clamp-2 mb-3">{hotel.description}</p>
                 

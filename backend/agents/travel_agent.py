@@ -97,18 +97,25 @@ class TravelAgent(Agent):
         dates = context.get('dates', '')
 
         # Get raw results from session state
-        flights = await session.get_state("flights", [])
+        # Note: ADK stores FlightList under "flights" key, which contains outbound_flights and return_flights
+        flights_data = await session.get_state("flights", {})
         hotels = await session.get_state("hotels", [])
         visa = await session.get_state("visa", {})
         activities = await session.get_state("activities", [])
         itinerary = await session.get_state("itinerary", [])
 
-        # Handle if results are Pydantic models or raw data
-        if hasattr(flights, 'flights'):
-            flights = [f.model_dump() if hasattr(f, 'model_dump')
-                       else f for f in flights.flights]
-        elif isinstance(flights, dict) and 'flights' in flights:
-            flights = flights['flights']
+        # Extract outbound and return flights from the flights data
+        outbound_flights = []
+        return_flights = []
+        
+        if hasattr(flights_data, 'outbound_flights'):
+            # It's a FlightList Pydantic model
+            outbound_flights = [f.model_dump() if hasattr(f, 'model_dump') else f for f in flights_data.outbound_flights]
+            return_flights = [f.model_dump() if hasattr(f, 'model_dump') else f for f in flights_data.return_flights]
+        elif isinstance(flights_data, dict):
+            # It's a dict with nested flight lists
+            outbound_flights = flights_data.get('outbound_flights', [])
+            return_flights = flights_data.get('return_flights', [])
 
         if hasattr(hotels, 'hotels'):
             hotels = [h.model_dump() if hasattr(h, 'model_dump')
@@ -131,12 +138,19 @@ class TravelAgent(Agent):
         elif isinstance(itinerary, dict) and 'days' in itinerary:
             itinerary = itinerary['days']
 
-        # Post-process flights
-        booking_url = self._generate_google_flights_url(
+        # Post-process outbound flights
+        outbound_booking_url = self._generate_google_flights_url(
             origin, destination, dates)
-        for flight in flights:
+        for flight in outbound_flights:
             if isinstance(flight, dict):
-                flight['booking_url'] = booking_url
+                flight['booking_url'] = outbound_booking_url
+
+        # Post-process return flights
+        return_booking_url = self._generate_google_flights_url(
+            destination, origin, dates)
+        for flight in return_flights:
+            if isinstance(flight, dict):
+                flight['booking_url'] = return_booking_url
 
         # Post-process hotels
         for hotel in hotels:
@@ -153,7 +167,8 @@ class TravelAgent(Agent):
                 activity.pop('category', None)
 
         return {
-            "flights": flights,
+            "outbound_flights": outbound_flights,
+            "return_flights": return_flights,
             "hotels": hotels,
             "visa": visa if visa else {
                 "country": destination,
@@ -253,7 +268,7 @@ class TravelAgent(Agent):
         await self.report_status("Finalizing your personalized trip plan...", step="post_process")
         results = await self._post_process_results(full_context)
 
-        print(f"[{self.name}] Results - Flights: {len(results['flights'])}, Hotels: {len(results['hotels'])}, Activities: {len(results['activities'])}")
+        print(f"[{self.name}] Results - Outbound Flights: {len(results['outbound_flights'])}, Return Flights: {len(results['return_flights'])}, Hotels: {len(results['hotels'])}, Activities: {len(results['activities'])}")
 
         # Add destination images
         results["destination_images"] = get_destination_images(

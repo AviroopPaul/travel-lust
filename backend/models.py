@@ -70,9 +70,11 @@ class TripPlan(BaseModel):
     model_config = ConfigDict(extra='forbid')
     destination: str
     destination_images: List[str] = []  # Multiple destination images
-    flights: List[FlightOption]
+    outbound_flights: List[FlightOption]
+    return_flights: List[FlightOption]
     hotels: List[HotelOption]
     visa: VisaInfo
     itinerary: List[ItineraryDay]
     total_budget: Optional[str] = None
     preferred_currency: str = "USD"
+

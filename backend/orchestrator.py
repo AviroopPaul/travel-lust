@@ -50,13 +50,18 @@ class Orchestrator:
             return float(match.group(1))
         return 0.0
 
-    def _calculate_total_budget(self, flights: List[FlightOption], hotels: List[HotelOption],
-                                itinerary: List[ItineraryDay], days: int, currency: str) -> str:
-        """Calculate a rough total budget estimate"""
+    def _calculate_total_budget(self, outbound_flights: List[FlightOption], return_flights: List[FlightOption],
+                                hotels: List[HotelOption], itinerary: List[ItineraryDay], days: int, currency: str) -> str:
+        """Calculate a rough total budget estimate including roundtrip flights"""
         total = 0.0
 
-        if flights:
-            total += self._extract_price(flights[0].price)
+        # Add outbound flight cost
+        if outbound_flights:
+            total += self._extract_price(outbound_flights[0].price)
+
+        # Add return flight cost
+        if return_flights:
+            total += self._extract_price(return_flights[0].price)
 
         if hotels:
             nightly_rate = self._extract_price(hotels[0].price_per_night)
@@ -98,19 +103,21 @@ class Orchestrator:
         # This single call replaces the manual parallel invocation of 4 separate agents
         result = await self.travel_agent.perform_task(query_str, context)
 
-        # Calculate total budget estimate
-        flights = [FlightOption(**f) for f in result.get("flights", [])]
+        # Calculate total budget estimate with roundtrip flights
+        outbound_flights = [FlightOption(**f) for f in result.get("outbound_flights", [])]
+        return_flights = [FlightOption(**f) for f in result.get("return_flights", [])]
         hotels = [HotelOption(**h) for h in result.get("hotels", [])]
         itinerary = [ItineraryDay(**i) for i in result.get("itinerary", [])]
         total_budget = self._calculate_total_budget(
-            flights, hotels, itinerary, user_query.days, user_query.currency
+            outbound_flights, return_flights, hotels, itinerary, user_query.days, user_query.currency
         )
 
         # Construct Final Trip Plan
         return TripPlan(
             destination=user_query.destination or "Unknown",
             destination_images=result.get("destination_images", []),
-            flights=result.get("flights", []),
+            outbound_flights=result.get("outbound_flights", []),
+            return_flights=result.get("return_flights", []),
             hotels=result.get("hotels", []),
             visa=result.get("visa", {
                 "country": user_query.destination,
