@@ -29,9 +29,8 @@ class TravelAgent(Agent):
     """
 
     def __init__(self, name: str = "TravelAgent", model_client: Any = None,
-                 model_id: str = "openai/gpt-4o-mini", memories: List[Dict[str, Any]] = None):
+                 model_id: str = "openai/gpt-4o-mini"):
         super().__init__(name, model_client, model_id)
-        self.memories = memories or []
 
         # Initialize sub-agents (they provide ADK agent definitions)
         self.flight_agent = FlightAgent("FlightAgent", model_client, model_id)
@@ -53,16 +52,9 @@ class TravelAgent(Agent):
 
     def _get_memory_context(self) -> Dict[str, Any]:
         """Convert memories to context for personalization"""
-        if not self.memories:
-            return {}
-
-        context = {"user_preferences": {}}
-        for mem in self.memories:
-            mem_type = mem.get('memory_type', 'general')
-            content = mem.get('content', '')
-            context["user_preferences"][mem_type] = content
-
-        return context
+        # TODO: Implement memory-based personalization in the future
+        # This will convert user memories into context for agent personalization
+        return {}
 
     def _generate_hotel_booking_url(self, hotel_name: str, destination: str, dates: str = None) -> str:
         """Generate a Google Hotels search URL"""
@@ -107,11 +99,13 @@ class TravelAgent(Agent):
         # Extract outbound and return flights from the flights data
         outbound_flights = []
         return_flights = []
-        
+
         if hasattr(flights_data, 'outbound_flights'):
             # It's a FlightList Pydantic model
-            outbound_flights = [f.model_dump() if hasattr(f, 'model_dump') else f for f in flights_data.outbound_flights]
-            return_flights = [f.model_dump() if hasattr(f, 'model_dump') else f for f in flights_data.return_flights]
+            outbound_flights = [f.model_dump() if hasattr(
+                f, 'model_dump') else f for f in flights_data.outbound_flights]
+            return_flights = [f.model_dump() if hasattr(
+                f, 'model_dump') else f for f in flights_data.return_flights]
         elif isinstance(flights_data, dict):
             # It's a dict with nested flight lists
             outbound_flights = flights_data.get('outbound_flights', [])
@@ -248,10 +242,6 @@ class TravelAgent(Agent):
 
         # Initialize session with the planning context
         await session.initialize_session(session_id, full_context, client_id=self.client_id)
-
-        if self.memories:
-            print(
-                f"[{self.name}] Using {len(self.memories)} memories for personalization")
 
         # Create the ADK agent hierarchy
         print(

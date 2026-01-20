@@ -80,22 +80,15 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
 # Trip Planning
 
 
-@app.post("/plan_trip", response_model=TripPlan)
-async def plan_trip(query: UserQueryWithClientId):
-    # Get existing memories for personalization
-    memories = db.get_memories(limit=30)
-    orchestrator = Orchestrator(memories=memories)
-    result = await orchestrator.plan_trip(query, client_id=query.client_id)
-    return result
-
-
 @app.post("/plan_trip_with_session")
 async def plan_trip_with_session(query: UserQueryWithClientId, session_id: Optional[str] = None):
     """Plan a trip and save to a chat session"""
 
-    # Get existing memories for personalization
-    memories = db.get_memories(limit=30)
-    orchestrator = Orchestrator(memories=memories)
+    # TODO: Implement memory-based personalization in the future
+    # This will include fetching user memories, injecting them into prompts/agents,
+    # and extracting new memories from interactions for future personalization.
+
+    orchestrator = Orchestrator()
 
     # Create or get session
     if not session_id:
@@ -121,28 +114,6 @@ async def plan_trip_with_session(query: UserQueryWithClientId, session_id: Optio
         f"I've planned your trip to {result.destination}!",
         result.model_dump()
     )
-
-    # Extract and save memories from this interaction
-    try:
-        extracted_memories = await orchestrator.extract_memories_from_interaction(query, result)
-        for mem in extracted_memories:
-            # Check if similar memory already exists
-            existing = db.get_memories(mem.get('memory_type'))
-            is_duplicate = any(
-                m['content'].lower() == mem['content'].lower()
-                for m in existing
-            )
-            if not is_duplicate and mem.get('confidence', 0) >= 0.6:
-                db.add_memory(
-                    mem['memory_type'],
-                    mem['content'],
-                    session_id,
-                    mem.get('confidence', 0.8)
-                )
-                print(
-                    f"[API] Saved memory: {mem['memory_type']} = {mem['content']}")
-    except Exception as e:
-        print(f"[API] Error extracting memories: {e}")
 
     return {
         "session_id": session_id,

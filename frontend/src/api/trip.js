@@ -2,15 +2,6 @@ import client from './client';
 
 const WS_BASE_URL = 'ws://localhost:8000';
 
-export const planTrip = async (queryData) => {
-    try {
-        const response = await client.post('/plan_trip', queryData);
-        return response.data;
-    } catch (error) {
-        console.error("Error planning trip:", error);
-        throw error;
-    }
-};
 
 export const planTripWithSession = async (queryData, sessionId = null) => {
     try {

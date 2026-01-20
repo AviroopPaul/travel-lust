@@ -9,7 +9,7 @@ import re
 from typing import Dict, Any, List
 
 from .gemini_client import get_gemini_client
-from .agents import TravelAgent, MemoryAgent
+from .agents import TravelAgent
 from .models import TripPlan, UserQuery, FlightOption, HotelOption, ItineraryDay
 
 
@@ -26,19 +26,14 @@ class Orchestrator:
     All agents share a common session state via SharedSession.
     """
 
-    def __init__(self, memories: List[Dict[str, Any]] = None):
+    def __init__(self):
         self.client = get_gemini_client()
-        self.memories = memories or []
 
         # Single TravelAgent handles all sub-agent orchestration
         self.travel_agent = TravelAgent(
             name="TravelAgent",
-            model_client=self.client,
-            memories=self.memories
+            model_client=self.client
         )
-
-        # Memory agent for extracting user preferences (runs separately after planning)
-        self.memory_agent = MemoryAgent("MemoryAgent", self.client)
 
     def _extract_price(self, price_str: str) -> float:
         """Helper to extract a numeric price from a string like '$1,200' or '500 EUR'"""
@@ -92,9 +87,6 @@ class Orchestrator:
             query_str += f" from {user_query.origin}"
 
         print(f"[Orchestrator] Planning trip: {query_str}")
-        if self.memories:
-            print(
-                f"[Orchestrator] Using {len(self.memories)} memories for personalization")
 
         # Build context from user query
         context = user_query.model_dump()
@@ -104,8 +96,10 @@ class Orchestrator:
         result = await self.travel_agent.perform_task(query_str, context)
 
         # Calculate total budget estimate with roundtrip flights
-        outbound_flights = [FlightOption(**f) for f in result.get("outbound_flights", [])]
-        return_flights = [FlightOption(**f) for f in result.get("return_flights", [])]
+        outbound_flights = [FlightOption(**f)
+                            for f in result.get("outbound_flights", [])]
+        return_flights = [FlightOption(**f)
+                          for f in result.get("return_flights", [])]
         hotels = [HotelOption(**h) for h in result.get("hotels", [])]
         itinerary = [ItineraryDay(**i) for i in result.get("itinerary", [])]
         total_budget = self._calculate_total_budget(
@@ -131,21 +125,3 @@ class Orchestrator:
             total_budget=total_budget,
             preferred_currency=user_query.currency
         )
-
-    async def extract_memories_from_interaction(
-        self,
-        user_query: UserQuery,
-        trip_result: TripPlan
-    ) -> List[Dict[str, Any]]:
-        """Extract memories from the planning interaction"""
-        query_str = f"Trip to {user_query.destination}"
-        if user_query.dates:
-            query_str += f" on {user_query.dates}"
-        if user_query.origin:
-            query_str += f" from {user_query.origin}"
-
-        context = user_query.model_dump()
-        context['trip_result'] = trip_result.model_dump()
-
-        result = await self.memory_agent.perform_task(query_str, context)
-        return result.get("memories", [])
