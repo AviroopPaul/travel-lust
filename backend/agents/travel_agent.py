@@ -9,7 +9,7 @@ from urllib.parse import quote
 import google.adk
 from google.adk.agents import ParallelAgent, SequentialAgent
 
-from .base_agent import Agent, SharedSession
+from .base_agent import Agent
 from .flight_agent import FlightAgent
 from .hotel_agent import HotelAgent
 from .visa_agent import VisaAgent
@@ -78,23 +78,22 @@ class TravelAgent(Agent):
         search_query = " ".join(query_parts)
         return f"{base_url}?q={quote(search_query)}"
 
-    async def _post_process_results(self, context: Dict[str, Any]) -> Dict[str, Any]:
+    async def _post_process_results(self, context: Dict[str, Any], session_id: str) -> Dict[str, Any]:
         """
         Post-process results from session state.
         Adds booking URLs, images, and cleans up data.
         """
-        session = self.shared_session
         destination = context.get('destination', '')
         origin = context.get('origin', '')
         dates = context.get('dates', '')
 
-        # Get raw results from session state
+        # Get raw results from ADK session state (agents wrote via output_key)
         # Note: ADK stores FlightList under "flights" key, which contains outbound_flights and return_flights
-        flights_data = await session.get_state("flights", {})
-        hotels = await session.get_state("hotels", [])
-        visa = await session.get_state("visa", {})
-        activities = await session.get_state("activities", [])
-        itinerary = await session.get_state("itinerary", [])
+        flights_data = await self.get_session_state(session_id, "flights", {})
+        hotels = await self.get_session_state(session_id, "hotels", [])
+        visa = await self.get_session_state(session_id, "visa", {})
+        activities = await self.get_session_state(session_id, "activities", [])
+        itinerary = await self.get_session_state(session_id, "itinerary", [])
 
         # Extract outbound and return flights from the flights data
         outbound_flights = []
@@ -229,10 +228,6 @@ class TravelAgent(Agent):
         # Clear image cache for new trip search
         clear_image_cache()
 
-        # Reset and initialize shared session for this planning request
-        SharedSession.reset()
-        session = self.shared_session
-
         # Generate unique session ID for this planning request
         session_id = str(uuid.uuid4())
 
@@ -240,23 +235,21 @@ class TravelAgent(Agent):
         memory_context = self._get_memory_context()
         full_context = {**context, **memory_context}
 
-        # Initialize session with the planning context
-        await session.initialize_session(session_id, full_context, client_id=self.client_id)
-
         # Create the ADK agent hierarchy
         print(
             f"[{self.name}] Creating ADK orchestration (Sequential -> Parallel -> sub-agents)...")
         adk_agent = self.create_adk_agent(full_context)
 
         # Run through ADK Runner - this handles all orchestration internally
+        # Session is created automatically in run_adk_agent
         print(f"[{self.name}] Running ADK orchestration...")
         await self.report_status(f"Searching for flights, hotels, and activities in {context.get('destination')}...", step="start")
-        await self.run_adk_agent(adk_agent, query)
+        await self.run_adk_agent(adk_agent, query, session_id, full_context)
 
         # Post-process results from session state
         print(f"[{self.name}] Post-processing results...")
         await self.report_status("Finalizing your personalized trip plan...", step="post_process")
-        results = await self._post_process_results(full_context)
+        results = await self._post_process_results(full_context, session_id)
 
         print(f"[{self.name}] Results - Outbound Flights: {len(results['outbound_flights'])}, Return Flights: {len(results['return_flights'])}, Hotels: {len(results['hotels'])}, Activities: {len(results['activities'])}")
 

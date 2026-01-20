@@ -71,8 +71,8 @@ Do not make assumptions.
             else:
                 memories = []
 
-            # Update shared session state
-            await self.shared_session.update_state("memories", memories)
+            # Note: ADK already stores results in session.state["memories"] via output_key
+            # No need to manually update state
 
             print(f"[{self.name}] Extracted {len(memories)} memories")
             return memories

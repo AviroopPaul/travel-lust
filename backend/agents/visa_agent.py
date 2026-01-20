@@ -83,8 +83,8 @@ IMPORTANT:
                     "application_steps": []
                 }
 
-            # Update shared session state
-            await self.shared_session.update_state("visa", visa_data)
+            # Note: ADK already stores results in session.state["visa"] via output_key
+            # No need to manually update state
 
             return {"visa": visa_data}
         except Exception as e:

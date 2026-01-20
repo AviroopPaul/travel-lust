@@ -111,8 +111,8 @@ IMPORTANT:
                 # clean up style
                 hotel.pop('style', None)
 
-            # Update shared session state
-            await self.shared_session.update_state("hotels", hotels_data)
+            # Note: ADK already stores results in session.state["hotels"] via output_key
+            # No need to manually update state
 
             return {"hotels": hotels_data}
         except Exception as e:

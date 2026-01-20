@@ -1,18 +1,21 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional
+import os
 import google.adk
-from google.adk.sessions import InMemorySessionService
+from google.adk.sessions.sqlite_session_service import SqliteSessionService
 from google.adk.models.lite_llm import LiteLlm
 from google.genai import types
 from ..status_manager import status_manager
 
 
-class ReportingSessionService(InMemorySessionService):
+class ReportingSessionService(SqliteSessionService):
     """
-    Wrapper for InMemorySessionService that reports state changes.
+    Wrapper for SqliteSessionService that reports state changes via WebSocket.
+    This is the only custom wrapper we need - for status reporting.
     """
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+
+    def __init__(self, db_path: str):
+        super().__init__(db_path)
         self.client_id: Optional[str] = None
 
     def set_client_id(self, client_id: str):
@@ -20,8 +23,8 @@ class ReportingSessionService(InMemorySessionService):
 
     async def append_event(self, session: Any, event: Any):
         await super().append_event(session, event)
-        
-        # Check if the event has a state delta
+
+        # Check if the event has a state delta (when agents write via output_key)
         if hasattr(event, 'actions') and event.actions and event.actions.state_delta:
             delta = event.actions.state_delta
             if self.client_id:
@@ -36,107 +39,16 @@ class ReportingSessionService(InMemorySessionService):
                     if key in status_map:
                         await status_manager.send_status(self.client_id, status_map[key], step=key)
 
-class SharedSession:
-    """
-    Singleton-like class to manage shared session state across all agents.
-    All agents share the same session service and session ID within a planning request.
-    """
-    _instance: Optional['SharedSession'] = None
-
-    def __init__(self):
-        self.session_service = ReportingSessionService()
-        self.current_session_id: Optional[str] = None
-        self.current_user_id: str = "default_user"
-        self.app_name: str = "TravelAssistant"
-        self.state: Dict[str, Any] = {}
-        self.client_id: Optional[str] = None
-
-    @classmethod
-    def get_instance(cls) -> 'SharedSession':
-        if cls._instance is None:
-            cls._instance = cls()
-        return cls._instance
-
-    @classmethod
-    def reset(cls):
-        """Reset the shared session for a new planning request"""
-        cls._instance = cls()
-
-    async def initialize_session(self, session_id: str, initial_state: Dict[str, Any] = None, client_id: str = None):
-        """Initialize a new session with optional initial state"""
-        self.current_session_id = session_id
-        self.state = initial_state or {}
-        self.client_id = client_id
-        self.session_service.set_client_id(client_id)
-
-        # Create session in the service
-        await self.session_service.create_session(
-            app_name=self.app_name,
-            user_id=self.current_user_id,
-            session_id=session_id,
-            state=self.state
-        )
-        print(f"[SharedSession] Initialized session: {session_id}")
-
-    async def update_state(self, key: str, value: Any):
-        """Update shared state in both local dict and ADK session service"""
-        self.state[key] = value
-        
-        if self.current_session_id:
-            try:
-                session = await self.session_service.get_session(
-                    app_name=self.app_name,
-                    user_id=self.current_user_id,
-                    session_id=self.current_session_id
-                )
-                if session:
-                    # Create an event with the state delta to update ADK's internal state
-                    from google.adk.events.event import Event
-                    from google.adk.events.event_actions import EventActions
-                    
-                    event = Event(
-                        invocation_id="state_update",
-                        author="system",
-                        actions=EventActions(state_delta={key: value})
-                    )
-                    await self.session_service.append_event(session, event)
-            except Exception as e:
-                print(f"[SharedSession] Error updating ADK session state: {e}")
-        
-        print(f"[SharedSession] Updated state key: {key}")
-        
-        # Auto-report status based on the key
-        if self.client_id:
-            status_map = {
-                "flights": "Found flight options",
-                "hotels": "Found accommodation options",
-                "visa": "Retrieved visa requirements",
-                "activities": "Discovered things to do",
-                "itinerary": "Completed your personalized itinerary"
-            }
-            if key in status_map:
-                await status_manager.send_status(self.client_id, status_map[key], step=key)
-
-    async def get_state(self, key: str, default: Any = None) -> Any:
-        """Get value from shared state, syncing with ADK session service if possible"""
-        if self.current_session_id:
-            try:
-                session = await self.session_service.get_session(
-                    app_name=self.app_name,
-                    user_id=self.current_user_id,
-                    session_id=self.current_session_id
-                )
-                if session and key in session.state:
-                    # Sync local state with ADK state
-                    self.state[key] = session.state[key]
-            except Exception as e:
-                print(f"[SharedSession] Error fetching from ADK session service: {e}")
-                
-        return self.state.get(key, default)
-
 
 class Agent(ABC):
-    """Base class for all agents - uses shared session for ADK orchestration"""
+    """
+    Base class for all agents - uses ADK session service directly.
+    """
+
+    # Shared session service instance (created once, reused)
+    _session_service: Optional[ReportingSessionService] = None
+    _app_name: str = "TravelAssistant"
+    _user_id: str = "default_user"
 
     def __init__(self, name: str, model_client: Any = None, model_id: str = "openai/gpt-4o-mini"):
         self.name = name
@@ -145,9 +57,20 @@ class Agent(ABC):
         self.model = LiteLlm(model=self.model_id)
         self.client_id: Optional[str] = None
 
+        # Initialize session service if not already done
+        if Agent._session_service is None:
+            # Use a separate DB file for ADK sessions (different from chat sessions)
+            db_path = os.path.join(
+                os.path.dirname(os.path.dirname(__file__)),
+                'adk_sessions.db'
+            )
+            Agent._session_service = ReportingSessionService(db_path)
+
     def set_client_id(self, client_id: str):
         """Set the client ID for WebSocket status updates"""
         self.client_id = client_id
+        if Agent._session_service:
+            Agent._session_service.set_client_id(client_id)
 
     async def report_status(self, status: str, step: str = None, data: dict = None):
         """Send a status update via WebSocket"""
@@ -156,9 +79,9 @@ class Agent(ABC):
             await status_manager.send_status(self.client_id, status, step or self.name, data)
 
     @property
-    def shared_session(self) -> SharedSession:
-        """Access the shared session singleton"""
-        return SharedSession.get_instance()
+    def session_service(self) -> ReportingSessionService:
+        """Get the shared session service"""
+        return Agent._session_service
 
     @abstractmethod
     def create_adk_agent(self, context: Dict[str, Any]) -> google.adk.Agent:
@@ -168,18 +91,46 @@ class Agent(ABC):
         """
         pass
 
-    async def run_adk_agent(self, agent: google.adk.Agent, prompt: str) -> Dict[str, Any]:
+    async def run_adk_agent(
+        self,
+        agent: google.adk.Agent,
+        prompt: str,
+        session_id: str,
+        initial_state: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         """
-        Run an ADK agent using the shared session.
+        Run an ADK agent using the session service directly.
         The ADK Runner handles all orchestration including sub-agents.
-        """
-        session = self.shared_session
 
+        Args:
+            agent: The ADK agent to run
+            prompt: The user prompt
+            session_id: Unique session ID for this request
+            initial_state: Optional initial state to set in the session
+        """
         runner = google.adk.Runner(
             agent=agent,
-            app_name=session.app_name,
-            session_service=session.session_service
+            app_name=Agent._app_name,
+            session_service=self.session_service
         )
+
+        # Create or get session
+        try:
+            session = await self.session_service.create_session(
+                app_name=Agent._app_name,
+                user_id=Agent._user_id,
+                session_id=session_id,
+                state=initial_state or {}
+            )
+        except Exception as e:
+            # Session might already exist, try to get it
+            session = await self.session_service.get_session(
+                app_name=Agent._app_name,
+                user_id=Agent._user_id,
+                session_id=session_id
+            )
+            if not session:
+                raise RuntimeError(f"Failed to create/get session: {e}")
 
         new_message = types.Content(
             parts=[types.Part(text=prompt)],
@@ -190,8 +141,8 @@ class Agent(ABC):
         event_count = 0
 
         async for event in runner.run_async(
-            user_id=session.current_user_id,
-            session_id=session.current_session_id,
+            user_id=Agent._user_id,
+            session_id=session_id,
             new_message=new_message
         ):
             event_count += 1
@@ -241,10 +192,28 @@ class Agent(ABC):
 
         return final_text
 
+    async def get_session_state(self, session_id: str, key: str = None, default: Any = None) -> Any:
+        """
+        Get state from ADK session.
+        If key is provided, returns that key's value. Otherwise returns entire state dict.
+        """
+        session = await self.session_service.get_session(
+            app_name=Agent._app_name,
+            user_id=Agent._user_id,
+            session_id=session_id
+        )
+
+        if not session:
+            return default
+
+        if key:
+            return session.state.get(key, default)
+        return session.state
+
     @abstractmethod
     async def perform_task(self, query: str, context: Dict[str, Any] = {}) -> Dict[str, Any]:
         """
         Executes the agent's specific task based on the input query.
-        Results should be written to shared session state.
+        Results are automatically stored in session.state via output_key.
         """
         pass

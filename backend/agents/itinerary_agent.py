@@ -64,8 +64,8 @@ Generate a {days}-day itinerary.
             else:
                 itinerary_data = []
 
-            # Update shared session state
-            await self.shared_session.update_state("itinerary", itinerary_data)
+            # Note: ADK already stores results in session.state["itinerary"] via output_key
+            # No need to manually update state
 
             return {"itinerary": itinerary_data}
         except Exception as e:

@@ -88,8 +88,8 @@ IMPORTANT:
                 # Remove category from output as it's not in the model
                 activity.pop('category', None)
 
-            # Update shared session state
-            await self.shared_session.update_state("activities", activities_data)
+            # Note: ADK already stores results in session.state["activities"] via output_key
+            # No need to manually update state
 
             return {"activities": activities_data}
         except Exception as e:

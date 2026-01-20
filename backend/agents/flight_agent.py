@@ -124,7 +124,8 @@ IMPORTANT:
 
             # Result should be an instance of FlightList
             if isinstance(result, FlightList):
-                outbound_data = [f.model_dump() for f in result.outbound_flights]
+                outbound_data = [f.model_dump()
+                                 for f in result.outbound_flights]
                 return_data = [f.model_dump() for f in result.return_flights]
             elif isinstance(result, dict):
                 outbound_data = result.get('outbound_flights', [])
@@ -145,9 +146,8 @@ IMPORTANT:
             for flight in return_data:
                 flight['booking_url'] = return_booking_url
 
-            # Update shared session state
-            await self.shared_session.update_state("outbound_flights", outbound_data)
-            await self.shared_session.update_state("return_flights", return_data)
+            # Note: ADK already stores results in session.state["flights"] via output_key
+            # No need to manually update state
 
             return {
                 "outbound_flights": outbound_data,
@@ -156,4 +156,3 @@ IMPORTANT:
         except Exception as e:
             print(f"[{self.name}] Error during ADK execution: {e}")
             return {"outbound_flights": [], "return_flights": []}
-

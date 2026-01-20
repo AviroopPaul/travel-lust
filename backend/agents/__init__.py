@@ -1,4 +1,4 @@
-from .base_agent import Agent, SharedSession
+from .base_agent import Agent
 from .flight_agent import FlightAgent
 from .hotel_agent import HotelAgent
 from .visa_agent import VisaAgent

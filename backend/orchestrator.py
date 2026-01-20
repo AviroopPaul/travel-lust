@@ -91,8 +91,7 @@ class Orchestrator:
         # Build context from user query
         context = user_query.model_dump()
 
-        # Let TravelAgent orchestrate all sub-agents
-        # This single call replaces the manual parallel invocation of 4 separate agents
+        # TravelAgent orchestrates the sub-agents (FlightAgent, HotelAgent, VisaAgent, ItineraryAgent, ActivityAgent)
         result = await self.travel_agent.perform_task(query_str, context)
 
         # Calculate total budget estimate with roundtrip flights
