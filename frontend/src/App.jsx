@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, useNavigate, Navigate } from 'react-router-dom';
+import React, { useState, useEffect, useRef } from 'react';
+import { BrowserRouter, Routes, Route, useNavigate, Navigate, useLocation } from 'react-router-dom';
 import { planTripWithSession, createStatusWebSocket } from './api';
+import { getSession } from './api/sessions';
 import ItineraryDrawer from './components/ItineraryDrawer';
 import ChatSidebar from './components/ChatSidebar';
 import PageBackground from './components/PageBackground';
@@ -18,6 +19,7 @@ const agentSteps = [
 
 function AppContent() {
     const navigate = useNavigate();
+    const location = useLocation();
     const [tripPlan, setTripPlan] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
@@ -28,7 +30,31 @@ function AppContent() {
     const [origin, setOrigin] = useState('');
     const [isItineraryOpen, setIsItineraryOpen] = useState(false);
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-    const [currentSessionId, setCurrentSessionId] = useState(null);
+    // Initialize currentSessionId from localStorage if available
+    const [currentSessionId, setCurrentSessionId] = useState(() => {
+        try {
+            return localStorage.getItem('currentSessionId') || null;
+        } catch {
+            return null;
+        }
+    });
+
+    // Store session ID in localStorage whenever it changes
+    useEffect(() => {
+        if (currentSessionId) {
+            try {
+                localStorage.setItem('currentSessionId', currentSessionId);
+            } catch (error) {
+                console.error('Failed to save session ID to localStorage:', error);
+            }
+        } else {
+            try {
+                localStorage.removeItem('currentSessionId');
+            } catch (error) {
+                console.error('Failed to remove session ID from localStorage:', error);
+            }
+        }
+    }, [currentSessionId]);
     const [currency, setCurrency] = useState('USD');
     const [days, setDays] = useState(3);
     const [travelers, setTravelers] = useState(1);
@@ -36,6 +62,7 @@ function AppContent() {
     const [strictBudget, setStrictBudget] = useState(false);
     const [statusMessage, setStatusMessage] = useState('');
     const [clientId] = useState(() => crypto.randomUUID());
+    const hasAttemptedRestore = useRef(false);
 
     // WebSocket connection for status updates
     useEffect(() => {
@@ -45,6 +72,85 @@ function AppContent() {
         });
         return cleanup;
     }, [clientId]);
+
+    // Handle page reload on /trip route - try to restore trip data from session
+    useEffect(() => {
+        // If we're on /trip route but have no tripPlan and we're not loading,
+        // try to restore from the session stored in localStorage
+        // Only attempt restoration once per mount
+        if (location.pathname === '/trip' && !tripPlan && !loading && !error && !hasAttemptedRestore.current) {
+            hasAttemptedRestore.current = true;
+            
+            const restoreTripFromSession = async () => {
+                const savedSessionId = currentSessionId || (() => {
+                    try {
+                        return localStorage.getItem('currentSessionId');
+                    } catch {
+                        return null;
+                    }
+                })();
+
+                if (savedSessionId) {
+                    try {
+                        setLoading(true);
+                        const sessionData = await getSession(savedSessionId);
+                        const messagesWithPlan = sessionData.messages?.filter(m => m.trip_plan) || [];
+                        
+                        if (messagesWithPlan.length > 0) {
+                            // Restore the latest trip plan
+                            const latestPlan = messagesWithPlan[messagesWithPlan.length - 1].trip_plan;
+                            setTripPlan(latestPlan);
+                            
+                            // Find the corresponding user message with user_query to restore all search parameters
+                            const userMessages = sessionData.messages?.filter(m => m.role === 'user' && m.user_query) || [];
+                            if (userMessages.length > 0) {
+                                // Get the latest user query (should correspond to the latest trip plan)
+                                const latestUserQuery = userMessages[userMessages.length - 1].user_query;
+                                if (latestUserQuery) {
+                                    setDestination(latestUserQuery.destination || '');
+                                    setOrigin(latestUserQuery.origin || '');
+                                    setDates(latestUserQuery.dates || '');
+                                    setDays(latestUserQuery.days || 3);
+                                    setTravelers(latestUserQuery.travelers || 1);
+                                    setTravelTime(latestUserQuery.travel_time || '');
+                                    setCurrency(latestUserQuery.currency || 'USD');
+                                    setStrictBudget(latestUserQuery.strict_budget || false);
+                                } else {
+                                    // Fallback to trip plan destination if no user_query
+                                    setDestination(latestPlan.destination || '');
+                                }
+                            } else {
+                                // Fallback to trip plan destination if no user_query found
+                                setDestination(latestPlan.destination || '');
+                            }
+                            
+                            setCurrentSessionId(savedSessionId);
+                            setHasSearched(true);
+                        } else {
+                            // Session exists but has no trip plan - redirect to search
+                            navigate('/search', { replace: true });
+                        }
+                    } catch (error) {
+                        console.error('Failed to restore session:', error);
+                        // Session doesn't exist or failed to load - redirect to search
+                        navigate('/search', { replace: true });
+                    } finally {
+                        setLoading(false);
+                    }
+                } else {
+                    // No session ID found - redirect to search
+                    navigate('/search', { replace: true });
+                }
+            };
+
+            restoreTripFromSession();
+        }
+        
+        // Reset the flag when navigating away from /trip
+        if (location.pathname !== '/trip') {
+            hasAttemptedRestore.current = false;
+        }
+    }, [location.pathname, tripPlan, loading, error, navigate, currentSessionId]);
 
     const handleSearch = async (e) => {
         e?.preventDefault();
@@ -83,7 +189,30 @@ function AppContent() {
         if (messagesWithPlan.length > 0) {
             const latestPlan = messagesWithPlan[messagesWithPlan.length - 1].trip_plan;
             setTripPlan(latestPlan);
-            setDestination(latestPlan.destination || '');
+            
+            // Find the corresponding user message with user_query to restore all search parameters
+            const userMessages = sessionData.messages.filter(m => m.role === 'user' && m.user_query);
+            if (userMessages.length > 0) {
+                // Get the latest user query (should correspond to the latest trip plan)
+                const latestUserQuery = userMessages[userMessages.length - 1].user_query;
+                if (latestUserQuery) {
+                    setDestination(latestUserQuery.destination || '');
+                    setOrigin(latestUserQuery.origin || '');
+                    setDates(latestUserQuery.dates || '');
+                    setDays(latestUserQuery.days || 3);
+                    setTravelers(latestUserQuery.travelers || 1);
+                    setTravelTime(latestUserQuery.travel_time || '');
+                    setCurrency(latestUserQuery.currency || 'USD');
+                    setStrictBudget(latestUserQuery.strict_budget || false);
+                } else {
+                    // Fallback to trip plan destination if no user_query
+                    setDestination(latestPlan.destination || '');
+                }
+            } else {
+                // Fallback to trip plan destination if no user_query found
+                setDestination(latestPlan.destination || '');
+            }
+            
             setCurrentSessionId(sessionData.session.id);
             setHasSearched(true);
             navigate('/trip');
@@ -104,6 +233,12 @@ function AppContent() {
         setStrictBudget(false);
         setCurrentSessionId(null);
         setError(null);
+        // Clear localStorage when starting a new trip
+        try {
+            localStorage.removeItem('currentSessionId');
+        } catch (error) {
+            console.error('Failed to clear session ID from localStorage:', error);
+        }
         navigate('/search');
     };
 
@@ -141,9 +276,21 @@ function AppContent() {
                             currentStep={currentStep}
                             statusMessage={statusMessage}
                             destination={destination}
+                            setDestination={setDestination}
+                            origin={origin}
+                            setOrigin={setOrigin}
+                            days={days}
+                            setDays={setDays}
+                            travelers={travelers}
+                            setTravelers={setTravelers}
+                            travelTime={travelTime}
+                            setTravelTime={setTravelTime}
                             currency={currency}
+                            setCurrency={setCurrency}
                             strictBudget={strictBudget}
+                            setStrictBudget={setStrictBudget}
                             setIsItineraryOpen={setIsItineraryOpen}
+                            onRefetch={handleSearch}
                         />
                     } />
                     <Route path="/" element={<Navigate to="/search" replace />} />

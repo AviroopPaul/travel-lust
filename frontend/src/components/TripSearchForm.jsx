@@ -1,5 +1,6 @@
 import React from 'react';
 import { CURRENCIES } from '../currencyUtils';
+import CountryDropdown from './CountryDropdown';
 
 const TripSearchForm = ({
     destination,
@@ -25,37 +26,33 @@ const TripSearchForm = ({
                 {/* Row 1: Where & When */}
                 <div className="flex flex-col md:flex-row gap-3 mb-3">
                     {/* Destination */}
-                    <div className="flex-1 relative">
-                        <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
-                                <circle cx="12" cy="10" r="3"/>
-                            </svg>
-                        </div>
-                        <input
-                            type="text"
-                            placeholder="Where to?"
+                    <div className="flex-1">
+                        <CountryDropdown
                             value={destination}
-                            onChange={(e) => setDestination(e.target.value)}
-                            className="w-full bg-[var(--color-surface)] rounded-xl pl-10 pr-4 py-3 text-[var(--color-text)] placeholder-[var(--color-text-subtle)] outline-none border border-[var(--color-border)] focus:border-[var(--color-accent)]/50 transition-colors"
+                            onChange={setDestination}
+                            placeholder="Where to?"
                             required
+                            icon={
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+                                    <circle cx="12" cy="10" r="3"/>
+                                </svg>
+                            }
                         />
                     </div>
 
                     {/* Origin */}
-                    <div className="md:w-40 relative">
-                        <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <circle cx="12" cy="12" r="10"/>
-                                <circle cx="12" cy="12" r="3"/>
-                            </svg>
-                        </div>
-                        <input
-                            type="text"
-                            placeholder="From"
+                    <div className="md:w-40">
+                        <CountryDropdown
                             value={origin}
-                            onChange={(e) => setOrigin(e.target.value)}
-                            className="w-full bg-[var(--color-surface)] rounded-xl pl-10 pr-4 py-3 text-[var(--color-text)] placeholder-[var(--color-text-subtle)] outline-none border border-[var(--color-border)] focus:border-[var(--color-accent)]/50 transition-colors"
+                            onChange={setOrigin}
+                            placeholder="From"
+                            icon={
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <circle cx="12" cy="12" r="10"/>
+                                    <circle cx="12" cy="12" r="3"/>
+                                </svg>
+                            }
                         />
                     </div>
 

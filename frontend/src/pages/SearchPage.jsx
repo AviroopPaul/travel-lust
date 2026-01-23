@@ -15,7 +15,7 @@ const SearchPage = ({
 }) => {
   return (
     <div className="flex-1 flex items-center justify-center py-12">
-      <div className="w-full max-w-4xl mx-auto px-6">
+      <div className="w-full max-w-4xl mx-auto px-6 relative z-20">
         {/* Logo/Title */}
         <div className="text-center mb-8">
           <Logo className="text-5xl md:text-6xl mb-4" />
