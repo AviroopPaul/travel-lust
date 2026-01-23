@@ -47,10 +47,19 @@ def init_db():
                 role TEXT NOT NULL,
                 content TEXT NOT NULL,
                 trip_plan TEXT,
+                user_query TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
             )
         ''')
+
+        # Add user_query column if it doesn't exist (for existing databases)
+        try:
+            cursor.execute(
+                'ALTER TABLE chat_messages ADD COLUMN user_query TEXT')
+        except sqlite3.OperationalError:
+            # Column already exists, ignore
+            pass
 
         # User memories table (for personalization)
         cursor.execute('''
@@ -143,14 +152,15 @@ def delete_session(session_id: str) -> bool:
 # Chat Message Functions
 
 
-def add_message(session_id: str, role: str, content: str, trip_plan: Dict = None) -> Dict[str, Any]:
+def add_message(session_id: str, role: str, content: str, trip_plan: Dict = None, user_query: Dict = None) -> Dict[str, Any]:
     """Add a message to a session"""
     with get_db() as conn:
         cursor = conn.cursor()
         trip_plan_json = json.dumps(trip_plan) if trip_plan else None
+        user_query_json = json.dumps(user_query) if user_query else None
         cursor.execute(
-            'INSERT INTO chat_messages (session_id, role, content, trip_plan) VALUES (?, ?, ?, ?)',
-            (session_id, role, content, trip_plan_json)
+            'INSERT INTO chat_messages (session_id, role, content, trip_plan, user_query) VALUES (?, ?, ?, ?, ?)',
+            (session_id, role, content, trip_plan_json, user_query_json)
         )
         # Update session timestamp
         cursor.execute(
@@ -162,7 +172,8 @@ def add_message(session_id: str, role: str, content: str, trip_plan: Dict = None
             'session_id': session_id,
             'role': role,
             'content': content,
-            'trip_plan': trip_plan
+            'trip_plan': trip_plan,
+            'user_query': user_query
         }
 
 
@@ -179,6 +190,8 @@ def get_session_messages(session_id: str) -> List[Dict[str, Any]]:
             msg = dict(row)
             if msg['trip_plan']:
                 msg['trip_plan'] = json.loads(msg['trip_plan'])
+            if msg['user_query']:
+                msg['user_query'] = json.loads(msg['user_query'])
             messages.append(msg)
         return messages
 

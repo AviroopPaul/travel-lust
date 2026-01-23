@@ -71,6 +71,10 @@ TOOL USAGE:
 - Make exactly 1 search call with query: "roundtrip flights {origin} to {destination} {travel_time or dates} prices {current_date[:4]}"
 - DO NOT search more than once.
 
+CRITICAL RULES:
+- DO NOT make up flight details (airline names, times, prices, durations)
+- Use real flights fetched from the search results tool.
+
 AFTER SEARCHING, you MUST respond with ONLY a JSON object (no explanation, no markdown):
 {{
   "outbound_flights": [

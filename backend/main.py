@@ -43,6 +43,7 @@ class MessageResponse(BaseModel):
     role: str
     content: str
     trip_plan: Optional[dict] = None
+    user_query: Optional[dict] = None
     created_at: str
 
 
@@ -96,13 +97,15 @@ async def plan_trip_with_session(query: UserQueryWithClientId, session_id: Optio
         title = f"Trip to {query.destination}" if query.destination else "New Trip"
         db.create_session(session_id, title, query.destination)
 
-    # Save user message
+    # Save user message with full query details
     user_content = f"Plan a trip to {query.destination}"
     if query.dates:
         user_content += f" on {query.dates}"
     if query.origin:
         user_content += f" from {query.origin}"
-    db.add_message(session_id, "user", user_content)
+    # Store the full user query object for later restoration
+    db.add_message(session_id, "user", user_content,
+                   user_query=query.model_dump())
 
     # Plan the trip
     result = await orchestrator.plan_trip(query, client_id=query.client_id)
