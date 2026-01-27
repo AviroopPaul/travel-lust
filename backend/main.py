@@ -1,5 +1,8 @@
+from pathlib import Path
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import Optional, List
 import uuid
@@ -20,6 +23,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
 # Pydantic models for API
 
@@ -62,6 +67,8 @@ class CreateMemoryRequest(BaseModel):
 
 @app.get("/")
 async def root():
+    if STATIC_DIR.exists():
+        return FileResponse(STATIC_DIR / "index.html")
     return {"message": "Travel Agent API is running"}
 
 
@@ -194,3 +201,17 @@ async def clear_memories():
     """Clear all memories"""
     count = db.clear_all_memories()
     return {"message": f"Cleared {count} memories"}
+
+
+# Serve frontend static files when built (production)
+if STATIC_DIR.exists():
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        if not full_path or full_path.startswith("api") or full_path.startswith("ws"):
+            raise HTTPException(status_code=404, detail="Not found")
+        safe_path = (STATIC_DIR / full_path).resolve()
+        if not str(safe_path).startswith(str(STATIC_DIR.resolve())):
+            raise HTTPException(status_code=403, detail="Forbidden")
+        if safe_path.is_file():
+            return FileResponse(safe_path)
+        return FileResponse(STATIC_DIR / "index.html")

@@ -1,0 +1,15 @@
+.git
+.gitignore
+*.md
+!deploy.md
+__pycache__
+*.pyc
+*.pyo
+venv/
+.venv/
+.env
+.env.*
+*.db
+frontend/node_modules
+frontend/.vite
+.cursor
