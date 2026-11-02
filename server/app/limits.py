@@ -11,7 +11,7 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 WINDOW_SECONDS = 3600
-VISITOR_TURNS_PER_HOUR = 40
+VISITOR_TURNS_PER_HOUR = 80
 SITE_TURNS_PER_HOUR = 400
 
 VISITOR_MESSAGE = "You have made a lot of requests. This is a free demo, so please try again in a little while."

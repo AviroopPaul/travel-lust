@@ -108,3 +108,13 @@ class BookingOffer(BaseModel):
     phone: Optional[str] = None
     baggage: list[str] = Field(default_factory=list)
     separate_tickets: bool = False
+
+
+class TripPrefs(BaseModel):
+    """How the traveller wants to spend their days. None means not asked yet."""
+
+    style: Optional[Literal["leisure", "balanced", "physical"]] = None
+    spots: Optional[Literal["top", "mixed", "hidden"]] = None
+    interests: Optional[list[str]] = None
+    notes: Optional[str] = None
+    days: Optional[int] = None

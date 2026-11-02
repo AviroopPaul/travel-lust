@@ -31,6 +31,8 @@
   --color-ochre-soft: var(--ochre-soft);
   --color-slate: var(--slate);
   --color-slate-soft: var(--slate-soft);
+  --color-plum: var(--plum);
+  --color-plum-soft: var(--plum-soft);
 
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
@@ -58,6 +60,14 @@
   --ochre-soft: #f1e8d2;
   --slate: #475a69;
   --slate-soft: #e2e7ea;
+  --plum: #7a4a68;
+  --plum-soft: #efe4ea;
+  --day-1: #a14c2a;
+  --day-2: #3f6a8a;
+  --day-3: #4f7045;
+  --day-4: #a0741a;
+  --day-5: #7a4a68;
+  --day-6: #2f7a76;
   color-scheme: light;
 }
 
@@ -81,6 +91,14 @@
     --ochre-soft: #352c19;
     --slate: #a4b6c4;
     --slate-soft: #293239;
+    --plum: #c79bbb;
+    --plum-soft: #33252e;
+    --day-1: #dc9069;
+    --day-2: #8fb7d4;
+    --day-3: #a3bb97;
+    --day-4: #d2ae63;
+    --day-5: #c79bbb;
+    --day-6: #79bdb7;
     color-scheme: dark;
   }
 }
@@ -124,16 +142,104 @@
   }
 }
 
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(28px);
+  }
+}
+
 .rise {
   animation: rise 0.28s ease-out both;
+}
+
+.panel-in {
+  animation: panel-in 0.32s ease-out both;
+}
+
+/* The colour of a day, set once on its section as --c. */
+.day-tint {
+  background: color-mix(in srgb, var(--c) 11%, var(--card));
+}
+
+.day-solid {
+  background: var(--c);
+  color: var(--card);
+}
+
+.day-ink {
+  color: var(--c);
+}
+
+.day-line {
+  border-color: color-mix(in srgb, var(--c) 45%, transparent);
 }
 
 .pulse-dot {
   animation: pulse-dot 1.1s ease-in-out infinite;
 }
 
+.leaflet-marker-icon.map-pin {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  background: var(--c);
+  border: 2px solid var(--card);
+  color: var(--card);
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.3);
+  transition: transform 0.12s ease-out;
+}
+
+.leaflet-marker-icon.map-pin.is-hot {
+  transform-origin: center;
+  outline: 3px solid var(--c);
+  outline-offset: 1px;
+}
+
+.leaflet-marker-icon.map-dot {
+  border-radius: 9999px;
+  background: var(--c);
+  border: 1.5px solid var(--card);
+  opacity: 0.55;
+}
+
+/* OpenStreetMap's tiles are bright. These filters quiet them to suit the palette and dark mode. */
+.leaflet-tile-pane {
+  filter: saturate(0.45) sepia(0.12) contrast(0.95);
+}
+
+@media (prefers-color-scheme: dark) {
+  .leaflet-tile-pane {
+    filter: invert(1) hue-rotate(180deg) saturate(0.35) brightness(0.8) contrast(0.95);
+  }
+}
+
+.leaflet-container .leaflet-control-attribution {
+  background: color-mix(in srgb, var(--card) 85%, transparent);
+  color: var(--subtle);
+  font-size: 10px;
+}
+
+.leaflet-container .leaflet-control-attribution a {
+  color: var(--muted-foreground);
+}
+
+.leaflet-bar a {
+  background: var(--card);
+  border-color: var(--border);
+  color: var(--foreground);
+}
+
+.leaflet-bar a:hover {
+  background: var(--muted);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .rise,
+  .panel-in,
   .pulse-dot {
     animation: none;
   }

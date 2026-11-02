@@ -12,7 +12,7 @@ function Chip({ children, onClick, title }) {
 
 export default function TripBar({ brief, onEdit }) {
   if (!brief || (!brief.destination?.length && !brief.origin?.length)) return null
-  const route = `${brief.origin_label || 'Anywhere'} to ${brief.destination_label || 'anywhere'}`
+  const route = brief.origin_label ? `${brief.origin_label} to ${brief.destination_label || 'anywhere'}` : brief.destination_label
   const dates = brief.outbound_date
     ? brief.return_date
       ? `${shortDate(brief.outbound_date)} to ${shortDate(brief.return_date)}`
@@ -25,7 +25,7 @@ export default function TripBar({ brief, onEdit }) {
         <Chip title="Change the route" onClick={() => onEdit('Change the route to ')}>{route}</Chip>
         {dates && <Chip title="Change the dates" onClick={() => onEdit('Change the dates to ')}>{dates}</Chip>}
         <Chip title="Change travellers" onClick={() => onEdit('Make it ')}>{travellers(brief)}</Chip>
-        <Chip title="Change cabin" onClick={() => onEdit('Change the cabin to ')}>{CABIN_LABELS[brief.cabin]}</Chip>
+        {brief.origin_label && <Chip title="Change cabin" onClick={() => onEdit('Change the cabin to ')}>{CABIN_LABELS[brief.cabin]}</Chip>}
       </nav>
     </>
   )

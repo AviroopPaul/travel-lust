@@ -12,3 +12,5 @@ langchain-google-genai
 airportsdata
 primp
 selectolax
+reportlab
+pillow

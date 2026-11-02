@@ -17,7 +17,7 @@ export default function Logo({ className }) {
   return (
     <span className={cn('inline-flex items-center gap-2 text-[15px] font-semibold tracking-tight whitespace-nowrap', className)}>
       <LogoMark />
-      Travel Lust
+      Travelust
     </span>
   )
 }

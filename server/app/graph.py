@@ -1,11 +1,13 @@
-"""The flight agent.
+"""The travel agent: flights first, then the days.
 
     input -> interpret (only for typed text) -> plan -> ask | search fan-out | present | offers
-                                                ^                                        |
+                                                ^   \\-> ask_trip | place fan-out -> compose -> present_plan
+                                                |                                        |
                                                 +------------- wait (interrupt) <--------+
 
-Gemini only turns typed text into structured changes. Search, filtering, ranking and booking
-links are plain code, so no flight fact can come from the model.
+Gemini only turns typed text into structured changes and suggests which places go on which day.
+Search, filtering, ranking, booking links, day times and travel estimates are plain code, so no
+flight fact or schedule can come from the model.
 """
 
 import asyncio
@@ -19,10 +21,11 @@ from langgraph.config import get_stream_writer
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send, interrupt
 
-from . import airports, llm
+from . import airports, llm, trip
 from .flights import google, rank, serpapi
-from .models import Brief, Filters
-from .questions import next_question
+from .models import Brief, Filters, TripPrefs
+from .places import web, wikivoyage
+from .questions import INTEREST_LABELS, SPOT_LABELS, STYLE_LABELS, next_question, next_trip_question
 
 TIME_WINDOWS = [(0, 5), (6, 11), (12, 17), (18, 23)]
 RESET = "__reset__"
@@ -39,6 +42,17 @@ class AgentState(TypedDict, total=False):
     brief: dict
     filters: dict
     stage: str  # gather, outbound, return, booking
+    planning: bool  # True while the traveller is working on their days, not their flights
+    prefs: dict
+    place_tasks: list
+    place_parts: Annotated[list, _parts_reducer]
+    pool: list
+    sources: list
+    places_key: Optional[str]
+    plan_key: Optional[str]
+    trip_days: list
+    plan_note: Optional[str]
+    flights_declined: bool
     next: str
     reply: Optional[str]
     transcript: Annotated[list, operator.add]
@@ -74,6 +88,31 @@ def _filters(state: AgentState) -> Filters:
     return Filters(**(state.get("filters") or {}))
 
 
+def _prefs(state: AgentState) -> TripPrefs:
+    return TripPrefs(**(state.get("prefs") or {}))
+
+
+def _city(brief: Brief) -> str:
+    return brief.destination_label or "your destination"
+
+
+def _skeleton(state: AgentState, brief: Brief, prefs: TripPrefs) -> list[dict]:
+    return trip.skeleton(brief, prefs, state.get("selected_outbound"), state.get("selected_return"))
+
+
+def _clear_plan() -> dict:
+    return {"planning": False, "flights_declined": False, "prefs": {}, **_no_plan()}
+
+
+def _no_plan() -> dict:
+    return {"pool": [], "sources": [], "places_key": None, "plan_key": None, "trip_days": [], "plan_note": None}
+
+
+def _quiet(state: AgentState) -> bool:
+    """A change made on the plan itself. It shows there, so the chat should not repeat it."""
+    return (state.get("input") or {}).get("type") == "edit"
+
+
 def _current_leg(state: AgentState) -> str:
     return "return" if state.get("stage") == "return" else "outbound"
 
@@ -101,6 +140,8 @@ def _reset_for_new_trip(old: Brief, new: Brief, update: dict) -> None:
     keep_flex = old.model_copy(update={"flex_days": new.flex_days})
     if keep_flex != new:
         update.update(stage="outbound", selected_outbound=None, selected_return=None, offers=[], offers_key=None)
+    if old.destination_label != new.destination_label:
+        update.update(_no_plan())
 
 
 def _shown_flights(state: AgentState) -> list[dict]:
@@ -130,6 +171,10 @@ async def interpret(state: AgentState) -> dict:
     filters = Filters(**state["input"]["filters"]) if state["input"].get("filters") else _filters(state)
     recent = [f"{m['role']}: {m['text']}" for m in state.get("transcript", []) if m.get("text")]
     update: dict = {"reply": None, "filters": filters.model_dump(), "transcript": [{"role": "user", "text": text}]}
+    if state.get("trip_days"):
+        edited = await _interpret_edit(state, text, update)
+        if edited is not None:
+            return edited
     try:
         plan = await llm.plan_turn(
             text,
@@ -159,13 +204,14 @@ async def interpret(state: AgentState) -> dict:
             "offers": [],
             "offers_key": None,
             "reply": plan.reply,
+            **_clear_plan(),
         }
 
     new = brief.model_copy(deep=True)
     if plan.origin_place or plan.origin_codes:
-        new.origin, new.origin_label = airports.resolve(plan.origin_place, plan.origin_codes)
+        new.origin, new.origin_label = await _resolve_place(plan.origin_place, plan.origin_codes)
     if plan.destination_place or plan.destination_codes:
-        new.destination, new.destination_label = airports.resolve(plan.destination_place, plan.destination_codes)
+        new.destination, new.destination_label = await _resolve_place(plan.destination_place, plan.destination_codes)
     for name in ("outbound_date", "return_date", "adults", "children", "infants", "cabin", "currency", "flex_days"):
         value = getattr(plan, name)
         if value is not None:
@@ -193,6 +239,15 @@ async def interpret(state: AgentState) -> dict:
             setattr(merged, name, value)
     update["filters"] = merged.model_dump()
 
+    prefs = _prefs(state)
+    for field, value in (("style", plan.trip_style), ("spots", plan.trip_spots), ("interests", plan.trip_interests), ("notes", plan.trip_notes), ("days", plan.trip_days)):
+        if value is not None:
+            setattr(prefs, field, value)
+    update["prefs"] = prefs.model_dump()
+    # Asking how to spend the days means a plan, even if Gemini missed the explicit flag.
+    if plan.want_itinerary or plan.trip_style or plan.trip_spots or plan.trip_interests:
+        update["planning"] = True
+
     if plan.go_back_to:
         update.update(_back_to(plan.go_back_to))
     elif plan.select_number and state.get("stage") in ("outbound", "return"):
@@ -202,8 +257,75 @@ async def interpret(state: AgentState) -> dict:
     return update
 
 
+async def _resolve_place(place: Optional[str], codes: list[str]) -> tuple[list[str], Optional[str]]:
+    """Airports for a place. One with none of its own, like Kyoto, gets the nearest ones."""
+    found, label = airports.resolve(place, codes)
+    if found or not label:
+        return found, label
+    position = await web.centre_of(label, [])
+    return (airports.nearest(*position) if position else []), label
+
+
+async def _interpret_edit(state: AgentState, text: str, update: dict) -> Optional[dict]:
+    """A typed change to a finished plan. Returns None when it is about flights instead."""
+    brief, prefs = _brief(state), _prefs(state)
+    days, pool = state["trip_days"], list(state.get("pool") or [])
+    try:
+        edit = await llm.plan_edit(
+            text,
+            _city(brief),
+            _today().isoformat(),
+            trip.plan_for_prompt(days, pool),
+            trip.pool_for_prompt(trip.spare_places(days, pool)[:50]),
+        )
+    except llm.QuotaExhausted:
+        update["reply"] = (
+            "This demo runs on a free Gemini account and it has hit its limit for now. "
+            "You can still swap, move and remove stops with the buttons."
+        )
+        return update
+    if edit.about_flights:
+        return None
+
+    for op in edit.ops:
+        change = op.model_dump()
+        if op.search and not op.new_place_id:
+            found = await _find_new_place(op.search, brief, pool)
+            if not found:
+                update["reply"] = f"I could not find a place for \"{op.search}\". Try wording it another way."
+                continue
+            pool.append(found)
+            change["new_place_id"] = found["id"]
+        days = trip.apply_op(days, change, pool)
+
+    new_prefs = prefs.model_copy()
+    for field in ("style", "spots", "interests", "notes"):
+        value = getattr(edit, field)
+        if value is not None:
+            setattr(new_prefs, field, value)
+    update.update(trip_days=days, pool=pool, prefs=new_prefs.model_dump())
+    if new_prefs != prefs:
+        update["planning"] = True
+    done = "Done. Your plan is updated on the right."
+    if edit.is_question or edit.reply:
+        update["reply"] = edit.reply
+    elif edit.ops and not update.get("reply"):
+        # While flights are open in the chat, the note has to go with that card instead.
+        update["plan_note" if state.get("planning") else "reply"] = done
+    return update
+
+
+async def _find_new_place(query: str, brief: Brief, pool: list[dict]) -> Optional[dict]:
+    """One extra place the traveller asked for, from a live web search."""
+    _status(f"Searching Google for {query}")
+    city = _city(brief)
+    found, _ = await web.search(f"{city}, specifically {query}", {"spots": "mixed"}, count=3)
+    located = await web.locate(found, city, await web.centre_of(city, pool))
+    return located[0] if located else None
+
+
 def _back_to(leg: str) -> dict:
-    change = {"stage": leg, "selected_return": None, "offers": [], "offers_key": None}
+    change = {"planning": False, "stage": leg, "selected_return": None, "offers": [], "offers_key": None}
     if leg == "outbound":
         change["selected_outbound"] = None
     return change
@@ -241,6 +363,10 @@ def apply_input(state: AgentState) -> dict:
     if value.get("filters") is not None:
         update["filters"] = Filters(**value["filters"]).model_dump()
 
+    if value.get("type") == "edit":
+        update["trip_days"] = trip.apply_op(state.get("trip_days") or [], value.get("op") or {}, state.get("pool") or [])
+        return update
+
     if value.get("type") == "select":
         leg = _current_leg(state)
         found = next(
@@ -275,7 +401,17 @@ def apply_input(state: AgentState) -> dict:
             search_keys={},
             offers=[],
             offers_key=None,
+            **_clear_plan(),
         )
+    if patch.get("plan_trip"):
+        update["planning"] = True
+    if patch.get("decline_flights"):
+        update["flights_declined"] = True
+        update["plan_note"] = "No problem. You can add flights any time from the plan."
+    if patch.get("show_booking"):
+        update["planning"] = False
+    if patch.get("prefs"):
+        update["prefs"] = {**(state.get("prefs") or {}), **patch["prefs"]}
     if patch.get("search_with_filters"):
         update["pushed_filters"] = {
             **(state.get("pushed_filters") or {}),
@@ -301,13 +437,29 @@ def _flex_dates(brief: Brief, today: date) -> list[str]:
 def plan(state: AgentState) -> dict:
     """Decide the next step from the state. Every path through the graph comes back here."""
     brief, filters = _brief(state), _filters(state)
-    if next_question(brief, _today()):
-        return {"next": "ask", "stage": "gather"}
+    planning = bool(state.get("planning"))
+    update: dict = {}
+    if planning:
+        # "5 days in Kyoto" gave a length before any dates, so the end date can now be worked out.
+        days = _prefs(state).days
+        if days and brief.outbound_date and not brief.return_date and not brief.one_way:
+            end = date.fromisoformat(brief.outbound_date) + timedelta(days=days - 1)
+            brief.return_date, brief.one_way = end.isoformat(), False
+            update["brief"] = brief.model_dump()
+    if next_question(brief, _today(), need_origin=not planning):
+        return {**update, "next": "ask", "stage": "gather"}
+    if planning:
+        return {**update, **_plan_step(state, brief)}
 
     stage = state.get("stage")
     if stage in (None, "gather"):
         stage = "outbound"
     if stage == "booking":
+        # Flights added to a finished plan can change which days are free.
+        if state.get("trip_days"):
+            prefs = _prefs(state)
+            if state.get("plan_key") != trip.plan_key(brief, prefs, _skeleton(state, brief, prefs)):
+                return {"next": "compose", "stage": stage}
         return {"next": "offers", "stage": stage}
 
     pushed = (state.get("pushed_filters") or {}).get(stage)
@@ -335,8 +487,23 @@ def plan(state: AgentState) -> dict:
     return {"next": "search", "stage": stage, "search_tasks": tasks, "search_parts": RESET, "search_error": None}
 
 
+def _plan_step(state: AgentState, brief: Brief) -> dict:
+    prefs = _prefs(state)
+    if next_trip_question(prefs, brief, trip.has_end_date(brief, state.get("selected_return"))):
+        return {"next": "ask_trip"}
+    if state.get("places_key") != trip.places_key(brief, prefs):
+        return {"next": "places", "place_tasks": ["guide", "web"], "place_parts": RESET}
+    if state.get("plan_key") != trip.plan_key(brief, prefs, _skeleton(state, brief, prefs)):
+        return {"next": "compose"}
+    return {"next": "present_plan"}
+
+
 def route_input(state: AgentState) -> str:
     return "interpret" if state["input"].get("type") == "text" else "apply_input"
+
+
+def route_after_compose(state: AgentState) -> str:
+    return "present_plan" if state.get("planning") else "offers"
 
 
 def route_plan(state: AgentState):
@@ -347,6 +514,10 @@ def route_plan(state: AgentState):
         return "offers"
     if step == "present":
         return "present"
+    if step in ("ask_trip", "compose", "present_plan"):
+        return step
+    if step == "places":
+        return [Send("place_part", {"task": t, "brief": state["brief"], "prefs": state.get("prefs") or {}}) for t in state["place_tasks"]]
     brief = state["brief"]
     outbound = state.get("selected_outbound") if state["stage"] == "return" else None
     return [Send("search_part", {"task": t, "brief": brief, "outbound": outbound}) for t in state["search_tasks"]]
@@ -418,6 +589,168 @@ async def merge_results(state: AgentState) -> dict:
     }
 
 
+async def place_part(payload: dict) -> dict:
+    """One source of places. A source that fails leaves the other one to carry the plan."""
+    task, city = payload["task"], _city(Brief(**payload["brief"]))
+    _status(f"Searching Google and travel guides for {city}")
+    if task == "guide":
+        try:
+            return {"place_parts": [{"task": task, "places": await wikivoyage.fetch(city), "sources": ["Wikivoyage"]}]}
+        except Exception:
+            return {"place_parts": [{"task": task, "places": [], "sources": []}]}
+    found, sites = await web.search(city, payload["prefs"])
+    return {"place_parts": [{"task": task, "places": found, "sources": sites}]}
+
+
+async def merge_places(state: AgentState) -> dict:
+    """Join the sources, find coordinates for web picks and keep the places that fit best."""
+    brief, prefs = _brief(state), _prefs(state)
+    city = _city(brief)
+    parts = {part["task"]: part for part in state.get("place_parts") or []}
+    guide = parts.get("guide", {}).get("places", [])
+    picks = parts.get("web", {}).get("places", [])
+    _status(f"Checking {len(guide) + len(picks)} places on the map")
+    guide, fresh = web.merge(guide, picks)
+    centre = await web.centre_of(city, guide)
+    located = await web.locate(fresh, city, centre)
+    days = _skeleton(state, brief, prefs)
+    sources = [source for part in parts.values() for source in part.get("sources", []) if part.get("places")]
+    return {
+        "pool": trip.choose_pool(guide + located, prefs, centre, len(days)),
+        "sources": list(dict.fromkeys(sources)),
+        "places_key": trip.places_key(brief, prefs),
+        "place_parts": RESET,
+    }
+
+
+def _describe_prefs(prefs: TripPrefs, children: int) -> str:
+    interests = [INTEREST_LABELS[key] for key in prefs.interests or [] if key in INTEREST_LABELS]
+    lines = [
+        f"Pace: {STYLE_LABELS.get(prefs.style or 'balanced')[1]}.",
+        f"Places: {SPOT_LABELS.get(prefs.spots or 'mixed')[1]}.",
+        f"Likes: {', '.join(interests) or 'no particular preference'}.",
+    ]
+    if children:
+        lines.append(f"Travelling with {children} children, so keep it suitable for them.")
+    if prefs.notes:
+        lines.append(f"Their own words: {prefs.notes}")
+    return "\n".join(lines)
+
+
+async def compose(state: AgentState) -> dict:
+    """Ask Gemini to arrange the days. If it cannot, plain code still gives a sensible plan."""
+    brief, prefs = _brief(state), _prefs(state)
+    days, pool = _skeleton(state, brief, prefs), state.get("pool") or []
+    city = _city(brief)
+    if not pool:
+        return {
+            "trip_days": trip.build_days(None, days, [], prefs),
+            "plan_key": trip.plan_key(brief, prefs, days),
+            "plan_note": f"I could not find places for {city}. Try the nearest big city.",
+        }
+    _status(f"Arranging your {len(days)} days in {city}")
+    suggestion, note = None, None
+    try:
+        composed = await llm.compose_plan(
+            city,
+            _describe_prefs(prefs, brief.children),
+            trip.days_for_prompt(days, prefs.style),
+            trip.pool_for_prompt(pool),
+        )
+        suggestion = composed.model_dump()["days"]
+    except llm.QuotaExhausted:
+        note = "This demo's free Gemini limit is used up, so I grouped the days by distance instead."
+    plan_days = trip.build_days(suggestion, days, pool, prefs)
+    stops = sum(len(day["stops"]) for day in plan_days)
+    if state.get("trip_days") and not state.get("planning"):
+        text = "I rearranged your days to fit these flights."
+    else:
+        text = f"Your {len(days)}-day plan for {city} is ready, with {stops} stops. Have a look on the right, and tell me what to change."
+    return {
+        "trip_days": plan_days,
+        "plan_key": trip.plan_key(brief, prefs, days),
+        "plan_note": f"{note} {text}" if note else text,
+    }
+
+
+def _booking_details(state: AgentState) -> Optional[dict]:
+    brief, outbound, inbound = _brief(state), state.get("selected_outbound"), state.get("selected_return")
+    if not outbound or (not brief.one_way and not inbound):
+        return None
+    chosen = inbound or outbound
+    return {
+        "brief": _trip_summary(brief),
+        "outbound": outbound,
+        "inbound": inbound,
+        "total": chosen["price"],
+        "currency": brief.currency,
+        "offers": state.get("offers") or [],
+        "google_link": google.booking_link(brief, outbound, inbound),
+    }
+
+
+def plan_card(state: AgentState) -> dict:
+    """Everything the plan screen and the PDF show. Built from state, so both always match."""
+    brief, prefs = _brief(state), _prefs(state)
+    days, pool = state.get("trip_days") or [], state.get("pool") or []
+    return {
+        "kind": "itinerary",
+        "brief": _trip_summary(brief),
+        "prefs": prefs.model_dump(),
+        "city": _city(brief),
+        "days": trip.schedule(days, _skeleton(state, brief, prefs), pool, prefs, _city(brief)),
+        "spare": trip.spare_places(days, pool)[:60],
+        "sources": state.get("sources") or [],
+        "booking": _booking_details(state),
+        "interest_labels": INTEREST_LABELS,
+    }
+
+
+def _flights_offer(state: AgentState, brief: Brief) -> Optional[dict]:
+    """Once the plan is made, ask about flights, unless they are chosen or were turned down."""
+    if _booking_details(state) or state.get("flights_declined") or not brief.outbound_date:
+        return None
+    start = f"From {brief.origin_label}" if brief.origin_label else "I will ask where you are flying from"
+    return {
+        "question": f"Do you want flights for this trip to {_city(brief)}?",
+        "options": [
+            {"label": "Yes, find flights", "description": start, "patch": {"go_back_to": "outbound"}},
+            {"label": "Not now", "description": "Keep the plan as it is", "patch": {"decline_flights": True}},
+        ],
+    }
+
+
+def present_plan(state: AgentState) -> dict:
+    brief = _brief(state)
+    card = {
+        **plan_card(state),
+        "summary": state.get("plan_note") or "Here is your plan.",
+        "reply": state.get("reply"),
+        "quiet": _quiet(state),
+        "offer": _flights_offer(state, brief),
+    }
+    return {"card": card, "plan_note": None, "transcript": _say(state, card["summary"], card)}
+
+
+def ask_trip(state: AgentState) -> dict:
+    brief, prefs = _brief(state), _prefs(state)
+    question = next_trip_question(prefs, brief, trip.has_end_date(brief, state.get("selected_return")))
+    answered = sum(1 for value in (prefs.style, prefs.spots, prefs.interests) if value is not None)
+    card = {
+        "kind": "question",
+        **question,
+        "progress": {"done": answered, "total": 3},
+        "brief": _trip_summary(brief),
+        "prefs": prefs.model_dump(),
+        "city": _city(brief),
+        "setup_days": _skeleton(state, brief, prefs),
+        "interest_labels": INTEREST_LABELS,
+        "booking": _booking_details(state),
+        "reply": state.get("reply"),
+    }
+    return {"card": card, "transcript": _say(state, card["question"], card)}
+
+
 def _trip_summary(brief: Brief) -> dict:
     return brief.model_dump()
 
@@ -431,7 +764,7 @@ def ask(state: AgentState) -> dict:
 def _say(state: AgentState, text: Optional[str], card: dict) -> list:
     reply = state.get("reply")
     joined = " ".join(t for t in (reply, text) if t)
-    return [{"role": "assistant", "text": joined, "card_kind": card["kind"]}]
+    return [] if _quiet(state) else [{"role": "assistant", "text": joined, "card_kind": card["kind"]}]
 
 
 SYMBOLS = {"INR": "₹", "USD": "$", "EUR": "€", "GBP": "£"}
@@ -484,6 +817,7 @@ def present(state: AgentState) -> dict:
         "selected_outbound": state.get("selected_outbound"),
         "summary": summary,
         "reply": state.get("reply"),
+        "quiet": _quiet(state),
         "google_link": google.search_link(brief),
     }
     return {"card": card, "transcript": _say(state, summary, card)}
@@ -515,6 +849,8 @@ def booking(state: AgentState) -> dict:
             f"Your flights come to {_money(chosen['price'], brief.currency)}. "
             "This link opens them on Google Flights, where every seller is listed with the lowest price first."
         )
+    if state.get("trip_days"):
+        text = " ".join(part for part in (state.get("plan_note"), text, "They are in your plan now.") if part)
     card = {
         "kind": "booking",
         "brief": _trip_summary(brief),
@@ -524,10 +860,12 @@ def booking(state: AgentState) -> dict:
         "currency": brief.currency,
         "offers": found,
         "google_link": google.booking_link(brief, outbound, inbound),
+        "has_plan": bool(state.get("trip_days")),
         "summary": text,
         "reply": state.get("reply"),
+        "quiet": _quiet(state),
     }
-    return {"card": card, "transcript": _say(state, text, card)}
+    return {"card": card, "plan_note": None, "transcript": _say(state, text, card)}
 
 
 def wait(state: AgentState) -> dict:
@@ -547,16 +885,26 @@ def build_graph(checkpointer=None):
     graph.add_node("offers", offers)
     graph.add_node("booking", booking)
     graph.add_node("wait", wait)
+    graph.add_node("ask_trip", ask_trip)
+    graph.add_node("place_part", place_part)
+    graph.add_node("merge_places", merge_places)
+    graph.add_node("compose", compose)
+    graph.add_node("present_plan", present_plan)
 
     graph.add_conditional_edges(START, route_input, ["interpret", "apply_input"])
     graph.add_edge("interpret", "plan")
     graph.add_edge("apply_input", "plan")
-    graph.add_conditional_edges("plan", route_plan, ["ask", "offers", "present", "search_part"])
+    graph.add_conditional_edges("plan", route_plan, ["ask", "offers", "present", "search_part", "ask_trip", "place_part", "compose", "present_plan"])
     graph.add_edge("search_part", "merge_results")
     graph.add_edge("merge_results", "present")
     graph.add_edge("offers", "booking")
     graph.add_edge("ask", "wait")
     graph.add_edge("present", "wait")
     graph.add_edge("booking", "wait")
+    graph.add_edge("place_part", "merge_places")
+    graph.add_edge("merge_places", "compose")
+    graph.add_conditional_edges("compose", route_after_compose, ["present_plan", "offers"])
+    graph.add_edge("ask_trip", "wait")
+    graph.add_edge("present_plan", "wait")
     graph.add_conditional_edges("wait", route_input, ["interpret", "apply_input"])
     return graph.compile(checkpointer=checkpointer)
