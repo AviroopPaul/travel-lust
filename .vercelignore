@@ -1,0 +1,12 @@
+backend/
+Dockerfile
+deploy.sh
+deploy.md
+.gcloudignore
+server/venv/
+server/data/
+server/tests/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+.env*

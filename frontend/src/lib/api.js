@@ -1,3 +1,5 @@
+export class RateLimited extends Error {}
+
 export async function loadThread(threadId) {
   const res = await fetch(`/api/threads/${threadId}`)
   return res.ok ? res.json() : null
@@ -10,6 +12,10 @@ export async function sendTurn(body, onEvent) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
+  if (res.status === 429) {
+    const { detail } = await res.json()
+    throw new RateLimited(detail)
+  }
   if (!res.ok || !res.body) throw new Error(`Server replied ${res.status}`)
 
   const reader = res.body.getReader()

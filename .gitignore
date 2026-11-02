@@ -4,3 +4,4 @@ venv/
 __pycache__
 server/data/
 .pytest_cache/
+.vercel
