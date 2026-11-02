@@ -1,325 +1,202 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { BrowserRouter, Routes, Route, useNavigate, Navigate, useLocation } from 'react-router-dom';
-import { planTripWithSession, createStatusWebSocket } from './api';
-import { getSession } from './api/sessions';
-import ItineraryDrawer from './components/ItineraryDrawer';
-import ChatSidebar from './components/ChatSidebar';
-import PageBackground from './components/PageBackground';
-import Navbar from './components/Navbar';
-import SearchPage from './pages/SearchPage';
-import ResultsPage from './pages/ResultsPage';
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { loadThread, sendTurn } from './lib/api'
+import { detectCurrency } from './lib/format'
+import { EMPTY_FILTERS } from './lib/filters'
+import { Button } from '@/components/ui/button'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import Logo from './components/Logo'
+import Landing from './components/Landing'
+import Transcript from './components/Transcript'
+import QuestionCard from './components/QuestionCard'
+import Composer from './components/Composer'
+import TripBar from './components/TripBar'
+import FlightsPanel from './components/FlightsPanel'
+import BookingPanel from './components/BookingPanel'
 
-const agentSteps = [
-    { id: 'visa', label: 'Checking visa requirements', icon: '🛂' },
-    { id: 'flights', label: 'Searching for flights', icon: '✈️' },
-    { id: 'hotels', label: 'Finding accommodations', icon: '🏨' },
-    { id: 'activities', label: 'Discovering activities', icon: '🎯' },
-    { id: 'itinerary', label: 'Crafting your itinerary', icon: '📋' },
-];
+const THREAD_KEY = 'travel-lust-thread'
 
-function AppContent() {
-    const navigate = useNavigate();
-    const location = useLocation();
-    const [tripPlan, setTripPlan] = useState(null);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState(null);
-    const [hasSearched, setHasSearched] = useState(false);
-    const [currentStep, setCurrentStep] = useState(0);
-    const [destination, setDestination] = useState('');
-    const [dates, setDates] = useState('');
-    const [origin, setOrigin] = useState('');
-    const [isItineraryOpen, setIsItineraryOpen] = useState(false);
-    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-    // Initialize currentSessionId from localStorage if available
-    const [currentSessionId, setCurrentSessionId] = useState(() => {
-        try {
-            return localStorage.getItem('currentSessionId') || null;
-        } catch {
-            return null;
+function readThread() {
+  try {
+    return localStorage.getItem(THREAD_KEY)
+  } catch {
+    return null
+  }
+}
+
+function writeThread(id) {
+  try {
+    if (id) localStorage.setItem(THREAD_KEY, id)
+    else localStorage.removeItem(THREAD_KEY)
+  } catch {
+    // Private windows can block storage. The trip just will not survive a reload.
+  }
+}
+
+function assistantText(card) {
+  if (card.kind === 'question') return [card.reply, card.question].filter(Boolean).join(' ')
+  return [card.reply, card.summary].filter(Boolean).join(' ')
+}
+
+export default function App() {
+  const [threadId, setThreadId] = useState(null)
+  const [messages, setMessages] = useState([])
+  const [card, setCard] = useState(null)
+  const [filters, setFilters] = useState(EMPTY_FILTERS)
+  const [running, setRunning] = useState(false)
+  const [status, setStatus] = useState(null)
+  const [error, setError] = useState(null)
+  const [view, setView] = useState('chat')
+  const [restoring, setRestoring] = useState(() => Boolean(readThread()))
+  const composerRef = useRef(null)
+  const threadRef = useRef(null)
+
+  const showCard = useCallback((next) => {
+    setCard(next)
+    if (next?.filters) setFilters({ ...EMPTY_FILTERS, ...next.filters })
+    if (next?.kind === 'flights' || next?.kind === 'booking') setView('board')
+    else setView('chat')
+  }, [])
+
+  useEffect(() => {
+    const saved = readThread()
+    if (!saved) return
+    loadThread(saved)
+      .then((thread) => {
+        if (!thread) {
+          writeThread(null)
+          return
         }
-    });
+        threadRef.current = saved
+        setThreadId(saved)
+        setMessages(thread.transcript)
+        showCard(thread.card)
+      })
+      .catch(() => writeThread(null))
+      .finally(() => setRestoring(false))
+  }, [showCard])
 
-    // Store session ID in localStorage whenever it changes
-    useEffect(() => {
-        if (currentSessionId) {
-            try {
-                localStorage.setItem('currentSessionId', currentSessionId);
-            } catch (error) {
-                console.error('Failed to save session ID to localStorage:', error);
+  const turn = useCallback(
+    async (body, userText) => {
+      setRunning(true)
+      setError(null)
+      setStatus(null)
+      if (userText) setMessages((m) => [...m, { role: 'user', text: userText }])
+      try {
+        await sendTurn(
+          { ...body, thread_id: threadRef.current, currency: detectCurrency(), filters: body.filters ?? (threadRef.current ? filters : undefined) },
+          (event, data) => {
+            if (event === 'thread') {
+              threadRef.current = data.thread_id
+              setThreadId(data.thread_id)
+              writeThread(data.thread_id)
+            } else if (event === 'status') {
+              setStatus(data.label)
+            } else if (event === 'card' && data.kind) {
+              setMessages((m) => [...m, { role: 'assistant', text: assistantText(data) }])
+              showCard(data)
+            } else if (event === 'error') {
+              setError(data.message)
             }
-        } else {
-            try {
-                localStorage.removeItem('currentSessionId');
-            } catch (error) {
-                console.error('Failed to remove session ID from localStorage:', error);
-            }
-        }
-    }, [currentSessionId]);
-    const [currency, setCurrency] = useState('USD');
-    const [days, setDays] = useState(3);
-    const [travelers, setTravelers] = useState(1);
-    const [travelTime, setTravelTime] = useState('');
-    const [strictBudget, setStrictBudget] = useState(false);
-    const [statusMessage, setStatusMessage] = useState('');
-    const [clientId] = useState(() => crypto.randomUUID());
-    const hasAttemptedRestore = useRef(false);
+          },
+        )
+      } catch {
+        setError('I could not reach the server. Check your connection and try again.')
+      } finally {
+        setRunning(false)
+        setStatus(null)
+      }
+    },
+    [filters, showCard],
+  )
 
-    // WebSocket connection for status updates
-    useEffect(() => {
-        const cleanup = createStatusWebSocket(clientId, {
-            onStatusUpdate: setStatusMessage,
-            onStepChange: setCurrentStep
-        });
-        return cleanup;
-    }, [clientId]);
+  const sendText = (text) => turn({ type: 'text', text }, text)
+  const tapOption = (option) => turn({ type: 'patch', patch: option.patch, label: option.label }, option.label)
+  const patch = (value, label) => turn({ type: 'patch', patch: value, label }, label)
+  const selectFlight = (flight, label) => turn({ type: 'select', itinerary_id: flight.id, label }, label)
+  const applyServerFilters = (next) => turn({ type: 'patch', patch: { search_with_filters: true }, filters: next })
 
-    // Handle page reload on /trip route - try to restore trip data from session
-    useEffect(() => {
-        // If we're on /trip route but have no tripPlan and we're not loading,
-        // try to restore from the session stored in localStorage
-        // Only attempt restoration once per mount
-        if (location.pathname === '/trip' && !tripPlan && !loading && !error && !hasAttemptedRestore.current) {
-            hasAttemptedRestore.current = true;
-            
-            const restoreTripFromSession = async () => {
-                const savedSessionId = currentSessionId || (() => {
-                    try {
-                        return localStorage.getItem('currentSessionId');
-                    } catch {
-                        return null;
-                    }
-                })();
+  const newTrip = () => {
+    writeThread(null)
+    threadRef.current = null
+    setThreadId(null)
+    setMessages([])
+    setCard(null)
+    setFilters(EMPTY_FILTERS)
+    setError(null)
+    setView('chat')
+  }
 
-                if (savedSessionId) {
-                    try {
-                        setLoading(true);
-                        const sessionData = await getSession(savedSessionId);
-                        const messagesWithPlan = sessionData.messages?.filter(m => m.trip_plan) || [];
-                        
-                        if (messagesWithPlan.length > 0) {
-                            // Restore the latest trip plan
-                            const latestPlan = messagesWithPlan[messagesWithPlan.length - 1].trip_plan;
-                            setTripPlan(latestPlan);
-                            
-                            // Find the corresponding user message with user_query to restore all search parameters
-                            const userMessages = sessionData.messages?.filter(m => m.role === 'user' && m.user_query) || [];
-                            if (userMessages.length > 0) {
-                                // Get the latest user query (should correspond to the latest trip plan)
-                                const latestUserQuery = userMessages[userMessages.length - 1].user_query;
-                                if (latestUserQuery) {
-                                    setDestination(latestUserQuery.destination || '');
-                                    setOrigin(latestUserQuery.origin || '');
-                                    setDates(latestUserQuery.dates || '');
-                                    setDays(latestUserQuery.days || 3);
-                                    setTravelers(latestUserQuery.travelers || 1);
-                                    setTravelTime(latestUserQuery.travel_time || '');
-                                    setCurrency(latestUserQuery.currency || 'USD');
-                                    setStrictBudget(latestUserQuery.strict_budget || false);
-                                } else {
-                                    // Fallback to trip plan destination if no user_query
-                                    setDestination(latestPlan.destination || '');
-                                }
-                            } else {
-                                // Fallback to trip plan destination if no user_query found
-                                setDestination(latestPlan.destination || '');
-                            }
-                            
-                            setCurrentSessionId(savedSessionId);
-                            setHasSearched(true);
-                        } else {
-                            // Session exists but has no trip plan - redirect to search
-                            navigate('/search', { replace: true });
-                        }
-                    } catch (error) {
-                        console.error('Failed to restore session:', error);
-                        // Session doesn't exist or failed to load - redirect to search
-                        navigate('/search', { replace: true });
-                    } finally {
-                        setLoading(false);
-                    }
-                } else {
-                    // No session ID found - redirect to search
-                    navigate('/search', { replace: true });
-                }
-            };
+  const prefill = (text) => {
+    setView('chat')
+    composerRef.current?.prefill(text)
+  }
 
-            restoreTripFromSession();
-        }
-        
-        // Reset the flag when navigating away from /trip
-        if (location.pathname !== '/trip') {
-            hasAttemptedRestore.current = false;
-        }
-    }, [location.pathname, tripPlan, loading, error, navigate, currentSessionId]);
+  if (restoring) return <div className="h-full bg-background" />
+  if (!threadId && !running) return <Landing onSend={sendText} error={error} />
 
-    const handleSearch = async (e) => {
-        e?.preventDefault();
-        if (!destination.trim()) return;
+  const hasBoard = card?.kind === 'flights' || card?.kind === 'booking'
+  const placeholder = card?.kind === 'question' ? 'Or type your own answer' : 'Try "no red-eyes"'
 
-        setLoading(true);
-        setError(null);
-        setTripPlan(null);
-        setHasSearched(true);
-        setCurrentStep(0);
-        setIsItineraryOpen(false);
+  return (
+    <div className="flex h-full flex-col">
+      <header className="flex h-13 shrink-0 items-center gap-2.5 border-b bg-card px-4">
+        <button onClick={newTrip} className="shrink-0" title="Start a new trip">
+          <Logo className="[&>svg]:size-6" />
+        </button>
+        <TripBar brief={card?.brief} onEdit={prefill} />
+        <Button variant="outline" size="sm" onClick={newTrip} className="ml-auto h-7.5 font-normal text-muted-foreground">
+          New trip
+        </Button>
+      </header>
 
-        navigate('/trip');
-
-        try {
-            const result = await planTripWithSession({
-                destination, dates, origin, days, travelers,
-                travel_time: travelTime, currency,
-                strict_budget: strictBudget,
-                client_id: clientId,
-                query: `Plan a trip to ${destination}`
-            }, currentSessionId);
-            
-            setTripPlan(result.trip_plan);
-            setCurrentSessionId(result.session_id);
-        } catch {
-            setError("Something went wrong. Please try again.");
-        } finally {
-            setLoading(false);
-            setCurrentStep(agentSteps.length);
-        }
-    };
-
-    const handleSelectSession = (sessionData) => {
-        const messagesWithPlan = sessionData.messages.filter(m => m.trip_plan);
-        if (messagesWithPlan.length > 0) {
-            const latestPlan = messagesWithPlan[messagesWithPlan.length - 1].trip_plan;
-            setTripPlan(latestPlan);
-            
-            // Find the corresponding user message with user_query to restore all search parameters
-            const userMessages = sessionData.messages.filter(m => m.role === 'user' && m.user_query);
-            if (userMessages.length > 0) {
-                // Get the latest user query (should correspond to the latest trip plan)
-                const latestUserQuery = userMessages[userMessages.length - 1].user_query;
-                if (latestUserQuery) {
-                    setDestination(latestUserQuery.destination || '');
-                    setOrigin(latestUserQuery.origin || '');
-                    setDates(latestUserQuery.dates || '');
-                    setDays(latestUserQuery.days || 3);
-                    setTravelers(latestUserQuery.travelers || 1);
-                    setTravelTime(latestUserQuery.travel_time || '');
-                    setCurrency(latestUserQuery.currency || 'USD');
-                    setStrictBudget(latestUserQuery.strict_budget || false);
-                } else {
-                    // Fallback to trip plan destination if no user_query
-                    setDestination(latestPlan.destination || '');
-                }
-            } else {
-                // Fallback to trip plan destination if no user_query found
-                setDestination(latestPlan.destination || '');
-            }
-            
-            setCurrentSessionId(sessionData.session.id);
-            setHasSearched(true);
-            navigate('/trip');
-        }
-        setIsSidebarOpen(false);
-    };
-
-    const handleNewTrip = () => {
-        setTripPlan(null);
-        setHasSearched(false);
-        setDestination('');
-        setDates('');
-        setOrigin('');
-        setDays(3);
-        setTravelers(1);
-        setTravelTime('');
-        setCurrency('USD');
-        setStrictBudget(false);
-        setCurrentSessionId(null);
-        setError(null);
-        // Clear localStorage when starting a new trip
-        try {
-            localStorage.removeItem('currentSessionId');
-        } catch (error) {
-            console.error('Failed to clear session ID from localStorage:', error);
-        }
-        navigate('/search');
-    };
-
-    return (
-        <div className="min-h-screen relative overflow-hidden">
-            <PageBackground />
-
-            <Navbar 
-                hasSearched={hasSearched} 
-                onNewTrip={handleNewTrip} 
-                onOpenSidebar={() => setIsSidebarOpen(true)} 
-            />
-
-            <main className="relative z-10 min-h-screen flex flex-col pt-16">
-                <Routes>
-                    <Route path="/search" element={
-                        <SearchPage 
-                            destination={destination} setDestination={setDestination}
-                            origin={origin} setOrigin={setOrigin}
-                            days={days} setDays={setDays}
-                            travelers={travelers} setTravelers={setTravelers}
-                            travelTime={travelTime} setTravelTime={setTravelTime}
-                            currency={currency} setCurrency={setCurrency}
-                            strictBudget={strictBudget} setStrictBudget={setStrictBudget}
-                            loading={loading}
-                            onSubmit={handleSearch}
-                        />
-                    } />
-                    <Route path="/trip" element={
-                        <ResultsPage 
-                            tripPlan={tripPlan}
-                            loading={loading}
-                            error={error}
-                            agentSteps={agentSteps}
-                            currentStep={currentStep}
-                            statusMessage={statusMessage}
-                            destination={destination}
-                            setDestination={setDestination}
-                            origin={origin}
-                            setOrigin={setOrigin}
-                            days={days}
-                            setDays={setDays}
-                            travelers={travelers}
-                            setTravelers={setTravelers}
-                            travelTime={travelTime}
-                            setTravelTime={setTravelTime}
-                            currency={currency}
-                            setCurrency={setCurrency}
-                            strictBudget={strictBudget}
-                            setStrictBudget={setStrictBudget}
-                            setIsItineraryOpen={setIsItineraryOpen}
-                            onRefetch={handleSearch}
-                        />
-                    } />
-                    <Route path="/" element={<Navigate to="/search" replace />} />
-                </Routes>
-            </main>
-
-            <ItineraryDrawer 
-                isOpen={isItineraryOpen}
-                onClose={() => setIsItineraryOpen(false)}
-                days={tripPlan?.itinerary || []}
-                destination={tripPlan?.destination}
-            />
-
-            <ChatSidebar
-                isOpen={isSidebarOpen}
-                onClose={() => setIsSidebarOpen(false)}
-                onSelectSession={handleSelectSession}
-                currentSessionId={currentSessionId}
-            />
+      {hasBoard && (
+        <div className="shrink-0 border-b bg-card p-1.5 lg:hidden">
+          <Tabs value={view} onValueChange={setView}>
+            <TabsList className="h-8 w-full">
+              <TabsTrigger value="board">{card.kind === 'booking' ? 'Booking' : 'Flights'}</TabsTrigger>
+              <TabsTrigger value="chat">Chat</TabsTrigger>
+            </TabsList>
+          </Tabs>
         </div>
-    );
-}
+      )}
 
-function App() {
-    return (
-        <BrowserRouter>
-            <AppContent />
-        </BrowserRouter>
-    );
-}
+      <div className="flex min-h-0 flex-1">
+        <section
+          className={`min-h-0 flex-col lg:flex lg:border-r ${hasBoard ? 'lg:w-[380px] lg:shrink-0' : 'mx-auto w-full max-w-2xl'} ${
+            view === 'chat' || !hasBoard ? 'flex w-full' : 'hidden'
+          }`}
+        >
+          <Transcript messages={messages} card={card} running={running} status={status} error={error} />
+          <div className="shrink-0 space-y-2 p-3">
+            {card?.kind === 'question' && !running && <QuestionCard card={card} onPick={tapOption} />}
+            <Composer ref={composerRef} onSend={sendText} disabled={running} placeholder={placeholder} />
+          </div>
+        </section>
 
-export default App;
+        {hasBoard && (
+          <main className={`min-w-0 flex-1 flex-col lg:flex ${view === 'board' ? 'flex' : 'hidden'}`}>
+            <div className="min-h-0 flex-1 overflow-y-auto">
+            {card.kind === 'flights' ? (
+              <FlightsPanel
+                card={card}
+                filters={filters}
+                setFilters={setFilters}
+                busy={running}
+                status={status}
+                onSelect={selectFlight}
+                onPatch={patch}
+                onServerFilters={applyServerFilters}
+              />
+            ) : (
+              <BookingPanel card={card} busy={running} status={status} onPatch={patch} />
+            )}
+            </div>
+            <div className="shrink-0 border-t p-2.5 lg:hidden">
+              <Composer onSend={sendText} disabled={running} placeholder={placeholder} />
+            </div>
+          </main>
+        )}
+      </div>
+    </div>
+  )
+}

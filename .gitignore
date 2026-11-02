@@ -2,3 +2,5 @@ venv/
 .env*
 *.db
 __pycache__
+server/data/
+.pytest_cache/
