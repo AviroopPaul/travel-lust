@@ -7,7 +7,8 @@ from typing import Optional
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
@@ -16,9 +17,9 @@ from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 from pydantic import BaseModel, Field
 
-from . import limits
+from . import limits, pdf
 from .flights import serpapi
-from .graph import build_graph
+from .graph import build_graph, plan_card
 from .models import Brief
 
 load_dotenv()
@@ -57,7 +58,7 @@ async def lifespan(app: FastAPI):
             yield
 
 
-app = FastAPI(title="Travel Lust", lifespan=lifespan)
+app = FastAPI(title="Travelust", lifespan=lifespan)
 
 
 class TurnRequest(BaseModel):
@@ -69,6 +70,7 @@ class TurnRequest(BaseModel):
     itinerary_id: Optional[str] = None
     patch: Optional[dict] = None
     filters: Optional[dict] = None
+    op: Optional[dict] = None
 
 
 def _sse(event: str, data: dict) -> str:
@@ -81,6 +83,16 @@ async def _pending_card(graph, config) -> Optional[dict]:
         for pending in task.interrupts:
             return pending.value
     return None
+
+
+async def _card_with_plan(graph, config) -> Optional[dict]:
+    """The current chat card. The finished plan stays on screen while flights are chosen in chat."""
+    card = await _pending_card(graph, config)
+    if card and card.get("kind") != "itinerary":
+        snapshot = await graph.aget_state(config)
+        if snapshot.values.get("trip_days"):
+            return {**card, "plan": plan_card(snapshot.values)}
+    return card
 
 
 @app.get("/api/health")
@@ -103,8 +115,20 @@ async def get_thread(thread_id: str):
     return {
         "thread_id": thread_id,
         "transcript": snapshot.values.get("transcript", []),
-        "card": await _pending_card(graph, config),
+        "card": await _card_with_plan(graph, config),
     }
+
+
+@app.get("/api/threads/{thread_id}/plan.pdf")
+async def plan_pdf(thread_id: str, inline: bool = False):
+    """The current plan, exactly as the plan screen shows it."""
+    snapshot = await app.state.graph.aget_state({"configurable": {"thread_id": thread_id}})
+    if not snapshot.values or not snapshot.values.get("trip_days"):
+        raise HTTPException(404, "This trip has no plan yet")
+    card = plan_card(snapshot.values)
+    content = await run_in_threadpool(pdf.render, card)
+    disposition = "inline" if inline else f'attachment; filename="{pdf.file_name(card)}"'
+    return Response(content, media_type="application/pdf", headers={"Content-Disposition": disposition, "Cache-Control": "no-store"})
 
 
 def _client_ip(request: Request) -> str:
@@ -145,7 +169,7 @@ async def turn(body: TurnRequest, request: Request):
                     count = len(chunk["plan"]["search_tasks"])
                     what = "return flights" if leg == "return" else "flights"
                     yield _sse("status", {"label": f"Searching {what} on Google Flights ({count} live queries)"})
-            card = await _pending_card(graph, config)
+            card = await _card_with_plan(graph, config)
             yield _sse("card", card or {})
         except Exception as exc:
             yield _sse("error", {"message": "Something went wrong on my side. Please try that again.", "detail": str(exc)[:300]})

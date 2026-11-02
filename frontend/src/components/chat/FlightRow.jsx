@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Kbd } from '@/components/ui/kbd'
 import { cn } from '@/lib/utils'
-import { clock, duration, money, shortDate } from '../lib/format'
+import { clock, duration, money, shortDate } from '../../lib/format'
 
 const TAGS = {
   best: ['Best overall', 'bg-sage-soft text-sage'],
@@ -97,9 +97,9 @@ function Details({ flight }) {
 export default function FlightRow({ flight, number, priceLabel, onSelect, disabled }) {
   const [open, setOpen] = useState(false)
   return (
-    <li>
+    <li className="@container">
       <Card className="rise gap-0 overflow-hidden py-0 transition-shadow hover:shadow-md">
-        <div className="grid grid-cols-[auto_1fr_auto] items-center gap-x-3 gap-y-1.5 px-4 pt-3.5 pb-2.5 sm:grid-cols-[auto_minmax(0,1.3fr)_minmax(0,1fr)_auto]">
+        <div className="grid grid-cols-[auto_1fr_auto] items-center gap-x-3 gap-y-1.5 px-3.5 pt-3 pb-2 @xl:grid-cols-[auto_minmax(0,1.3fr)_minmax(0,1fr)_auto]">
           <AirlineLogo code={flight.airline_codes[0]} name={flight.airlines[0]} />
 
           <div className="min-w-0">
@@ -110,7 +110,7 @@ export default function FlightRow({ flight, number, priceLabel, onSelect, disabl
             <p className="truncate text-[13px] text-muted-foreground">{flight.airlines.join(', ')}</p>
           </div>
 
-          <div className="col-span-3 row-start-2 min-w-0 sm:col-span-1 sm:col-start-3 sm:row-start-1">
+          <div className="col-span-3 row-start-2 min-w-0 @xl:col-span-1 @xl:col-start-3 @xl:row-start-1">
             <div className="flex items-baseline gap-2">
               <p className="text-[13px] font-medium">{duration(flight.duration_min)}</p>
               <div className="min-w-0 flex-1"><RouteLine flight={flight} /></div>
@@ -118,13 +118,13 @@ export default function FlightRow({ flight, number, priceLabel, onSelect, disabl
             <p className="truncate text-[12.5px] text-subtle" title={stopsText(flight)}>{stopsText(flight)}</p>
           </div>
 
-          <div className="col-start-3 row-start-1 text-right sm:col-start-4">
+          <div className="col-start-3 row-start-1 text-right @xl:col-start-4">
             <p className="text-[17px] font-semibold">{money(flight.price, flight.currency)}</p>
             <p className="text-[11.5px] text-subtle">{priceLabel}</p>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-1.5 px-4 pb-3">
+        <div className="flex flex-wrap items-center gap-1.5 px-3.5 pb-2.5">
           {flight.tags.map((tag) => (
             <Tag key={tag} className={TAGS[tag][1]}>{TAGS[tag][0]}</Tag>
           ))}
@@ -137,7 +137,7 @@ export default function FlightRow({ flight, number, priceLabel, onSelect, disabl
               <ChevronDown className={cn('transition-transform', open && 'rotate-180')} />
             </Button>
             <Button size="sm" onClick={() => onSelect(flight)} disabled={disabled}>
-              {number <= 9 && <Kbd className="hidden bg-primary-foreground/20 text-primary-foreground sm:inline-flex">{number}</Kbd>}
+              {number <= 9 && <Kbd className="hidden bg-primary-foreground/20 text-primary-foreground @md:inline-flex">{number}</Kbd>}
               Select
             </Button>
           </span>

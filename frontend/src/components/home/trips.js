@@ -1,0 +1,42 @@
+// Real trips made in the app on 2 November 2026. The fares were live that day.
+export const TRIPS = [
+  {
+    key: 'dubai',
+    region: 'Dubai',
+    title: '6 days in Dubai',
+    route: 'Bengaluru to Dubai, 15 to 20 January 2027',
+    taste: 'A good mix, famous and hidden, more food',
+    fare: '₹79,942',
+    stops: 18,
+    board: { to: 'DUBAI', date: '15 JAN', days: '6', fare: '  ₹79,942' },
+    prompt: 'Plan 6 days in Dubai in January, with plenty of good food',
+    days: [
+      ['Downtown Dubai', 'Burj Khalifa, Dubai Fountain'],
+      ['Jumeirah Coast', 'Jumeirah Beach, Burj al-Arab'],
+      ['Palm Jumeirah', 'Palm Islands, The Lost Chambers'],
+      ['Bur Dubai', 'Al Fahidi, Arabian Tea House'],
+      ['Deira Souks', 'Gold Souk, Spice Souk'],
+      ['Travel day', 'Home again'],
+    ],
+  },
+  {
+    key: 'kyoto',
+    region: 'Japan',
+    title: '7 days in Kyoto',
+    route: 'Bengaluru to Kyoto, 28 March to 3 April 2027',
+    taste: 'Leisure, famous and hidden, food and nature',
+    fare: '₹2,09,770',
+    stops: 16,
+    board: { to: 'KYOTO', date: '28 MAR', days: '7', fare: '₹2,09,770' },
+    prompt: 'Plan 7 relaxed days in Kyoto next March, with good food and nature',
+    days: [
+      ['Central Kyoto', 'Arrive, then dinner at Apollo'],
+      ['Arashiyama', 'Bamboo Forest, Tenryū-ji'],
+      ['North Kyoto', 'Kinkaku-ji, Ryōan-ji'],
+      ['Central and North', 'Botanical Garden, Ippodo Tea'],
+      ['Higashiyama', 'Kiyomizu Temple, Kenninji'],
+      ['South Kyoto', 'Fushimi Inari, Tōfuku-ji'],
+      ['Travel day', 'Home again'],
+    ],
+  },
+]

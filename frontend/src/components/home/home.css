@@ -1,0 +1,966 @@
+/* The app fills the window. The home page scrolls with the document instead. */
+html.home,
+html.home body,
+html.home #root {
+  height: auto;
+}
+
+html.home {
+  scroll-padding-top: 84px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html.home {
+    scroll-behavior: smooth;
+  }
+}
+
+.home-page {
+  --ink: #201d18;
+  --ink-text: #f1ebdd;
+  --flap: #2f2b24;
+  --flap-text: #f1ebdd;
+  --flap-dim: #aaa292;
+  --flap-hot: #e8b860;
+  overflow-x: clip;
+}
+
+@media (prefers-color-scheme: dark) {
+  .home-page {
+    --ink: #0f0e0c;
+    --flap: #2a2720;
+  }
+}
+
+.wrap {
+  width: 100%;
+  max-width: 1320px;
+  margin-inline: auto;
+  padding-inline: 20px;
+}
+
+@media (min-width: 640px) {
+  .wrap {
+    padding-inline: 32px;
+  }
+}
+
+/* Type */
+.display {
+  position: relative;
+  z-index: 1;
+  font-size: clamp(3.3rem, 9.6vw, 8.5rem);
+  line-height: 0.93;
+  font-weight: 650;
+  letter-spacing: -0.052em;
+}
+
+.big {
+  font-size: clamp(2.8rem, 7.4vw, 6.5rem);
+  line-height: 0.96;
+  font-weight: 650;
+  letter-spacing: -0.048em;
+}
+
+/* The header: a rounded pane of glass that floats over the page. */
+.home-nav {
+  position: sticky;
+  top: 12px;
+  z-index: 40;
+  margin-top: 12px;
+  padding-inline: 12px;
+  pointer-events: none;
+}
+
+.glass {
+  --glass-edge: rgb(32 29 24 / 0.11);
+  --glass-shine: rgb(255 255 255 / 0.6);
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  max-width: 1040px;
+  height: 56px;
+  margin-inline: auto;
+  padding: 0 8px 0 16px;
+  border: 1px solid var(--glass-edge);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--card) 74%, transparent);
+  -webkit-backdrop-filter: blur(24px) saturate(1.6);
+  backdrop-filter: blur(24px) saturate(1.6);
+  box-shadow: 0 12px 32px -16px rgb(32 29 24 / 0.4), inset 0 1px 0 var(--glass-shine);
+}
+
+@media (prefers-color-scheme: dark) {
+  .glass {
+    --glass-edge: rgb(255 255 255 / 0.13);
+    --glass-shine: rgb(255 255 255 / 0.09);
+    background: color-mix(in srgb, var(--card) 58%, transparent);
+    box-shadow: 0 12px 32px -14px rgb(0 0 0 / 0.7), inset 0 1px 0 var(--glass-shine);
+  }
+}
+
+.glass-links {
+  display: none;
+  align-items: center;
+  gap: 2px;
+  font-size: 14.5px;
+}
+
+@media (min-width: 820px) {
+  .glass-links {
+    display: flex;
+  }
+}
+
+.glass-links a {
+  padding: 6px 11px;
+  border-radius: 999px;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+
+.glass-links a:hover {
+  background: color-mix(in srgb, var(--foreground) 9%, transparent);
+}
+
+.glass-continue {
+  display: none;
+  font-size: 14.5px;
+  white-space: nowrap;
+}
+
+.glass-continue:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+@media (min-width: 640px) {
+  .glass-continue {
+    display: inline;
+  }
+}
+
+/* The button */
+.try {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45em;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  color: var(--primary-foreground);
+  background: var(--primary);
+  transition: background 0.15s, transform 0.15s;
+}
+
+.try svg {
+  width: 1em;
+  height: 1em;
+  transition: transform 0.2s ease-out;
+}
+
+.try:hover {
+  background: color-mix(in srgb, var(--primary) 88%, var(--foreground));
+}
+
+.try:hover svg {
+  transform: translateX(4px);
+}
+
+.try:active {
+  transform: translateY(1px);
+}
+
+.try:focus-visible,
+.board-row:focus-visible,
+.trip-go:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.try-sm {
+  font-size: 15px;
+  padding: 9px 16px;
+  border-radius: 999px;
+}
+
+/* A ticket: two punched notches in the sides. */
+.try-lg {
+  font-size: 23px;
+  padding: 17px 32px;
+  border-radius: 10px;
+  -webkit-mask: radial-gradient(circle 8px at 0 50%, transparent 98%, #000) left / 51% 100% no-repeat, radial-gradient(circle 8px at 100% 50%, transparent 98%, #000) right / 51% 100% no-repeat;
+  mask: radial-gradient(circle 8px at 0 50%, transparent 98%, #000) left / 51% 100% no-repeat, radial-gradient(circle 8px at 100% 50%, transparent 98%, #000) right / 51% 100% no-repeat;
+}
+
+.try-giant {
+  display: flex;
+  width: fit-content;
+  margin-top: 10px;
+  margin-left: -0.04em;
+  gap: 0.2em;
+  background: none;
+  color: var(--primary);
+  font-size: clamp(4rem, 19vw, 17.5rem);
+  line-height: 1;
+  font-weight: 800;
+  letter-spacing: -0.065em;
+  transition: color 0.15s;
+}
+
+.try-giant:hover {
+  background: none;
+  color: color-mix(in srgb, var(--primary) 82%, var(--foreground));
+}
+
+.try-giant svg {
+  width: 0.72em;
+  height: 0.72em;
+  align-self: center;
+}
+
+.try-giant:hover svg {
+  transform: translateX(0.08em);
+}
+
+/* The flight across the hero */
+.arc {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1280 / 400;
+  pointer-events: none;
+  overflow: visible;
+}
+
+@media (max-width: 899px) {
+  .arc {
+    display: none;
+  }
+}
+
+.arc-line,
+.arc-ink,
+.arc-mask {
+  fill: none;
+  stroke-width: 2.5;
+}
+
+.arc-line {
+  stroke: var(--border);
+  stroke-dasharray: 3 11;
+  stroke-linecap: round;
+}
+
+.arc-ink {
+  stroke: var(--primary);
+  stroke-dasharray: 3 11;
+  stroke-linecap: round;
+}
+
+.arc-mask {
+  stroke: #fff;
+  stroke-width: 10;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: arc-draw 3s 0.35s cubic-bezier(0.5, 0, 0.25, 1) forwards;
+}
+
+.arc-start {
+  fill: var(--background);
+  stroke: var(--primary);
+  stroke-width: 2.5;
+}
+
+.arc-end {
+  fill: none;
+  stroke: var(--primary);
+  stroke-width: 2.5;
+  opacity: 0.45;
+}
+
+.arc-plane {
+  fill: var(--foreground);
+  stroke: var(--background);
+  stroke-width: 1.4;
+  paint-order: stroke;
+}
+
+@keyframes arc-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* The departures board */
+.board {
+  container-type: inline-size;
+  --cells: 25;
+  --groups: 4;
+  --pad: 16px;
+  --gap: 12px;
+  padding: 14px var(--pad) 12px;
+  border-radius: 12px;
+  background: #171510;
+  border: 1px solid #38332a;
+  color: var(--flap-text);
+}
+
+.board > * {
+  --w: min(24px, calc((100cqw - 2 * 8px - (var(--groups) - 1) * var(--gap) - var(--cells) * 2px) / var(--cells)));
+  --u: calc(var(--w) + 2px);
+}
+
+.board-head,
+.board-row {
+  display: grid;
+  grid-template-columns: calc(8 * var(--u)) calc(6 * var(--u)) calc(2 * var(--u)) calc(9 * var(--u));
+  column-gap: var(--gap);
+  padding-inline: 8px;
+}
+
+.board-head {
+  margin-bottom: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--flap-dim);
+  white-space: nowrap;
+}
+
+.board-row {
+  position: relative;
+  width: 100%;
+  padding-block: 4px;
+  border-radius: 6px;
+  text-align: left;
+  color: var(--flap-dim);
+  transition: background 0.15s, color 0.15s;
+}
+
+button.board-row:hover {
+  background: #26221b;
+}
+
+.board-row[data-on] {
+  color: var(--flap-text);
+  background: #2a251c;
+}
+
+.board-row[data-on]::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 9px;
+  bottom: 9px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--flap-hot);
+}
+
+.board-try {
+  color: var(--flap-hot);
+}
+
+.board-col {
+  min-width: 0;
+}
+
+.flap-word {
+  display: flex;
+  gap: 2px;
+}
+
+.flap {
+  position: relative;
+  flex: none;
+  display: block;
+  width: var(--w);
+  height: calc(var(--w) * 1.55);
+  font-family: 'Geist Mono Variable', ui-monospace, monospace;
+  font-size: calc(var(--w) * 1.08);
+  font-weight: 600;
+  line-height: calc(var(--w) * 1.55);
+  text-align: center;
+  white-space: pre;
+}
+
+.flap > span {
+  position: absolute;
+  inset: 0;
+  border-radius: 2.5px;
+  background: var(--flap);
+}
+
+.flap::after {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  top: 50%;
+  height: 1px;
+  background: #100e0b;
+  z-index: 3;
+}
+
+.flap-top,
+.flap-fall {
+  clip-path: inset(0 0 50% 0);
+}
+
+.flap-bottom,
+.flap-up {
+  clip-path: inset(50% 0 0 0);
+}
+
+.flap-fall {
+  z-index: 2;
+  animation: flap-fall 62ms linear both;
+}
+
+.flap-up {
+  z-index: 2;
+  animation: flap-up 62ms linear both;
+}
+
+@keyframes flap-fall {
+  to {
+    transform: perspective(180px) rotateX(-90deg);
+  }
+}
+
+@keyframes flap-up {
+  0%,
+  50% {
+    transform: perspective(180px) rotateX(90deg);
+  }
+  100% {
+    transform: perspective(180px) rotateX(0);
+  }
+}
+
+@container (max-width: 470px) {
+  .board > * {
+    --cells: 19;
+    --groups: 3;
+  }
+
+  .board-head,
+  .board-row {
+    grid-template-columns: calc(8 * var(--u)) calc(2 * var(--u)) calc(9 * var(--u));
+  }
+
+  .board-date {
+    display: none;
+  }
+}
+
+/* The hotels board says who does what. */
+.board-who > * {
+  --cells: 16;
+  --groups: 2;
+}
+
+.board-who .board-row {
+  grid-template-columns: calc(7 * var(--u)) calc(9 * var(--u));
+  padding-block: 6px;
+  color: var(--flap-text);
+}
+
+.board-who .board-row[data-on] {
+  color: var(--flap-hot);
+}
+
+@container (max-width: 470px) {
+  .board-who > * {
+    --cells: 16;
+    --groups: 2;
+  }
+
+  .board-who .board-row {
+    grid-template-columns: calc(7 * var(--u)) calc(9 * var(--u));
+  }
+}
+
+/* Pen notes */
+.note {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  font-family: 'Kalam', cursive;
+  font-size: 20px;
+  line-height: 1.1;
+  color: var(--primary);
+  transform: rotate(-1.5deg);
+}
+
+.note svg {
+  flex: none;
+  width: 52px;
+  height: 40px;
+  overflow: visible;
+}
+
+.note path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: arc-draw 0.9s 0.5s ease-out forwards;
+}
+
+/* These arrows point sideways at a picture, which sits below on a narrow screen. */
+@media (max-width: 1023px) {
+  .stop .note {
+    display: none;
+  }
+}
+
+.note-board {
+  position: absolute;
+  right: 40px;
+  bottom: calc(100% + 6px);
+  white-space: nowrap;
+}
+
+.note-board svg {
+  transform: rotate(68deg);
+}
+
+/* The app frame */
+.frame {
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--foreground) 22%, var(--border));
+  border-radius: 14px;
+  background: var(--card);
+  box-shadow: 0 30px 60px -32px rgb(32 29 24 / 0.5);
+}
+
+.frame-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12.5px;
+  color: var(--subtle);
+}
+
+.frame-url {
+  font-family: 'Geist Mono Variable', ui-monospace, monospace;
+  white-space: nowrap;
+}
+
+@media (max-width: 639px) {
+  .frame-url {
+    display: none;
+  }
+}
+
+/* Bands */
+.band-clay {
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.band-ink {
+  background: var(--ink);
+  color: var(--ink-text);
+}
+
+.band-accent {
+  color: var(--flap-hot);
+}
+
+/* The two hard parts */
+.part {
+  --c: var(--primary);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--card);
+  color: var(--foreground);
+}
+
+.part-mark {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--c);
+}
+
+.part-title {
+  margin-top: 8px;
+  font-size: clamp(2.6rem, 5vw, 4.25rem);
+  line-height: 1;
+  font-weight: 650;
+  letter-spacing: -0.045em;
+}
+
+.part-shot {
+  flex: 1;
+  height: clamp(320px, 38vw, 520px);
+  margin: 0 0 -1px clamp(20px, 3vw, 32px);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-right: 0;
+  border-bottom: 0;
+  border-top-left-radius: 12px;
+  background: var(--background);
+}
+
+.part-shot img {
+  width: 100%;
+  height: auto;
+}
+
+/* The day panel can lose the edge of its map on a phone. The fares must stay whole. */
+.part-shot-map img {
+  min-width: 620px;
+  max-width: none;
+}
+
+/* The route down the page */
+.route {
+  --p: 0%;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 72px;
+}
+
+.route::before,
+.route::after {
+  content: '';
+  position: absolute;
+  top: 18px;
+  bottom: 18px;
+  left: 17px;
+  border-left: 2.5px dashed var(--input);
+}
+
+.route::after {
+  border-color: var(--primary);
+  clip-path: inset(0 -4px calc(100% - var(--p)) -4px);
+}
+
+.stop {
+  position: relative;
+  display: grid;
+  gap: 24px;
+  padding-left: 58px;
+}
+
+.stop-pin {
+  position: absolute;
+  z-index: 1;
+  left: 0;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 37px;
+  height: 37px;
+  border-radius: 50%;
+  border: 3px solid var(--background);
+  outline: 2px solid var(--c);
+  background: var(--c);
+  color: var(--card);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+@media (min-width: 1024px) {
+  .route {
+    gap: 110px;
+  }
+
+  .stop {
+    grid-template-columns: minmax(0, 4fr) minmax(0, 7fr);
+    gap: 48px;
+    padding-left: 72px;
+  }
+
+  .stop-text {
+    position: sticky;
+    top: 104px;
+    align-self: start;
+  }
+}
+
+.shot-card {
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--foreground) 16%, var(--border));
+  border-radius: 12px;
+  background: var(--card);
+  box-shadow: 0 22px 44px -30px rgb(32 29 24 / 0.45);
+}
+
+.shot-card img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* Three PDF pages on a table */
+.fan {
+  position: relative;
+  aspect-ratio: 16 / 11;
+  max-width: 760px;
+}
+
+.fan img {
+  position: absolute;
+  top: 3%;
+  width: 45%;
+  height: auto;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: #fff;
+  box-shadow: 0 18px 34px -18px rgb(32 29 24 / 0.5);
+  transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.fan picture:nth-of-type(1) img {
+  left: 0;
+  transform: rotate(-5deg) translateY(4%);
+}
+
+.fan picture:nth-of-type(2) img {
+  left: 55%;
+  transform: rotate(5deg) translateY(4%);
+}
+
+.fan picture:nth-of-type(3) img {
+  left: 27.5%;
+  z-index: 1;
+  transform: translateY(-1%);
+}
+
+.fan:hover picture:nth-of-type(1) img {
+  transform: rotate(-8deg) translate(-4%, 4%);
+}
+
+.fan:hover picture:nth-of-type(2) img {
+  transform: rotate(8deg) translate(4%, 4%);
+}
+
+/* The real trips */
+.trip {
+  display: grid;
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--t);
+}
+
+@media (min-width: 1024px) {
+  .trip {
+    grid-template-columns: minmax(0, 7fr) minmax(0, 6fr);
+  }
+}
+
+.trip-region {
+  font-size: clamp(4rem, 11vw, 9.5rem);
+  line-height: 0.88;
+  font-weight: 650;
+  letter-spacing: -0.06em;
+  color: var(--i);
+}
+
+.trip-stats {
+  display: flex;
+  gap: 36px;
+  margin-top: 22px;
+  padding-block: 12px;
+  border-block: 1px solid color-mix(in srgb, var(--i) 30%, transparent);
+}
+
+.trip-stats dt {
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+
+.trip-stats dd {
+  font-size: 24px;
+  line-height: 1.15;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.trip-day {
+  display: grid;
+  grid-template-columns: 24px auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  padding-block: 4px;
+  font-size: 15px;
+}
+
+.trip-num {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--c);
+  color: var(--card);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.trip-go {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 22px;
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: 1.5px solid var(--foreground);
+  font-size: 15px;
+  font-weight: 700;
+  transition: background 0.15s, color 0.15s;
+}
+
+.trip-go:hover {
+  background: var(--foreground);
+  color: var(--background);
+}
+
+.trip-art {
+  position: relative;
+  min-height: 460px;
+}
+
+.trip-pdf,
+.trip-phone {
+  position: absolute;
+  overflow: hidden;
+  transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.trip-pdf img,
+.trip-phone img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.trip-pdf {
+  left: 6%;
+  top: 7%;
+  width: 62%;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: #fff;
+  box-shadow: 0 22px 40px -22px rgb(32 29 24 / 0.55);
+  transform: rotate(-4deg);
+}
+
+.trip-phone {
+  right: 7%;
+  top: 14%;
+  width: 37%;
+  border: 5px solid #171510;
+  border-radius: 24px;
+  background: #171510;
+  box-shadow: 0 26px 44px -20px rgb(32 29 24 / 0.65);
+  transform: rotate(3deg);
+}
+
+.trip:hover .trip-pdf {
+  transform: rotate(-6deg) translateX(-6px);
+}
+
+.trip:hover .trip-phone {
+  transform: rotate(4.5deg) translateX(6px);
+}
+
+/* The footer: the name runs edge to edge, and the page cuts off its last 5%. */
+.foot {
+  overflow: hidden;
+  container-type: inline-size;
+  background: var(--ink);
+  color: var(--ink-text);
+}
+
+.foot-link {
+  opacity: 0.7;
+  transition: opacity 0.15s;
+}
+
+.foot-link:hover {
+  opacity: 1;
+}
+
+.foot-word {
+  display: flex;
+  justify-content: center;
+  /* The word is 4.09em wide. This leaves a small gutter on each side. */
+  font-size: calc(100cqw / 4.2);
+  line-height: 1;
+  font-weight: 650;
+  letter-spacing: -0.05em;
+  white-space: nowrap;
+  color: var(--ink-text);
+  /* The letters are 0.722em tall, so this cut hides 5% of them. */
+  margin-bottom: -0.168em;
+}
+
+.foot-word span {
+  display: block;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .foot-word span {
+    transform: translateY(100%);
+    transition: transform 0.7s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  .foot-word.is-seen span {
+    transform: none;
+  }
+}
+
+/* Things rise in as they reach the screen. */
+@media (prefers-reduced-motion: no-preference) {
+  .reveal {
+    opacity: 0;
+    transform: translateY(18px);
+    transition: opacity 0.6s ease-out, transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  .reveal.in {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .arc-mask,
+  .note path {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+
+  .flap-fall,
+  .flap-up {
+    animation: none;
+  }
+}
+
+@media print {
+  .reveal {
+    opacity: 1;
+    transform: none;
+  }
+}

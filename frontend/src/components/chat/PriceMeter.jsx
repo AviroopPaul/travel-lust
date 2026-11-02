@@ -1,4 +1,4 @@
-import { money } from '../lib/format'
+import { money } from '../../lib/format'
 
 const WORDS = { low: 'Prices are low', typical: 'Prices are typical', high: 'Prices are high' }
 
@@ -11,7 +11,7 @@ export default function PriceMeter({ insights, currency }) {
   const at = (value) => `${((value - start) / (end - start)) * 100}%`
   const label = `Lowest fare today ${money(lowest, currency)}. Usual range ${money(low, currency)} to ${money(high, currency)}.`
   return (
-    <div className="min-w-0 sm:w-72" title={label}>
+    <div className="min-w-0" title={label}>
       <p className="text-[13px]">
         <span className="font-medium">{WORDS[level]}</span>
         <span className="text-subtle"> for these dates</span>

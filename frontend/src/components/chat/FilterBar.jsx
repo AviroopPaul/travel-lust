@@ -9,8 +9,8 @@ import { Separator } from '@/components/ui/separator'
 import { Slider } from '@/components/ui/slider'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
-import { activeCount, EMPTY_FILTERS } from '../lib/filters'
-import { duration, hourLabel, money } from '../lib/format'
+import { activeCount, EMPTY_FILTERS } from '../../lib/filters'
+import { duration, hourLabel, money } from '../../lib/format'
 
 function FilterPopover({ label, active, children }) {
   return (
@@ -159,7 +159,7 @@ export default function FilterBar({ flights, filters, setFilters, shownCount, cu
   }
 
   return (
-    <div className="sticky top-0 z-10 border-b bg-background/95 px-4 py-2.5 backdrop-blur-sm sm:px-6">
+    <div className="sticky top-0 z-10 -mx-1 bg-background px-1 py-2">
       <div className="flex flex-wrap items-center gap-1.5">
         <FilterPopover label={stopsLabel} active={filters.max_stops != null}>
           <RadioGroup
@@ -295,7 +295,7 @@ export default function FilterBar({ flights, filters, setFilters, shownCount, cu
 
       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
         <p className="text-[12.5px] text-subtle">{shownCount} of {flights.length} flights</p>
-        <Tabs value={filters.sort} onValueChange={(sort) => set({ sort })}>
+        <Tabs value={filters.sort} onValueChange={(sort) => set({ sort })} className="max-w-full overflow-x-auto">
           <TabsList className="h-7 p-0.5">
             {SORTS.map(([id, label]) => (
               <TabsTrigger key={id} value={id} className="px-2 text-[12.5px]">{label}</TabsTrigger>

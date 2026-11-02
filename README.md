@@ -1,8 +1,8 @@
-# Travel Lust
+# Travelust
 
-A travel agent you talk to. Tell it the trip in your own words. It asks for what is missing, shows live fares, and waits for your choice at each step. Then it gives you the link to book.
+A travel agent you talk to. Tell it the trip in your own words. It asks for what is missing, shows live fares, and waits for your choice at each step. It plans your days, adds your flights in either order, gives you the link to book, and exports the whole trip as a PDF.
 
-Flights only for now. Hotels and itineraries come next.
+Travelust does not suggest hotels. Where you sleep is personal, and many other services already do it. The product puts its work into the two hard parts: flights and days.
 
 ## How it works
 
@@ -10,7 +10,10 @@ Flights only for now. Hotels and itineraries come next.
 - **Model:** Gemini reads typed messages and turns them into trip details and filters. It never produces a flight fact. Tapping an option costs no Gemini request.
 - **Fares:** live from Google Flights, read directly in `server/app/flights/google.py`. This is unofficial, so it can break if Google changes the page or blocks a server IP.
 - **Sellers:** with `SERPAPI_API_KEY` set, the booking step lists sellers with the cheapest first. SerpApi is also the backup for search. Without the key, the booking link opens the chosen flights on Google Flights.
-- **UI:** React and Tailwind, in `frontend/`.
+- **Day plan:** the agent asks about pace, famous or little-known places, and interests. Places come from Wikivoyage's API and a Google Search run by Gemini's search tool (`server/app/places/`). Gemini suggests which place goes on which day. Times, order, travel estimates and swaps are plain code in `server/app/trip.py`, and a swap costs no Gemini request.
+- **PDF:** `server/app/pdf.py` draws the same data the plan screen shows, with ReportLab and the Geist font.
+- **Home page:** `/` is the landing page (`components/home/`). `/plan` is the app. The screenshots in `public/landing/` are real captures of a Dubai trip and a Kyoto trip, in light and dark.
+- **UI:** React and Tailwind, in `frontend/`. Every decision happens in the chat (`components/chat/`), including flights and filters. The finished plan opens beside it as one story, with flights on the days they happen and one map that follows the day you read (`components/trip/`, Leaflet and OpenStreetMap tiles).
 
 ## Run it
 
