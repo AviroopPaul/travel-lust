@@ -6,29 +6,55 @@ from pathlib import Path
 from typing import Optional
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.types import Command
-from pydantic import BaseModel
+from psycopg.rows import dict_row
+from psycopg_pool import AsyncConnectionPool
+from pydantic import BaseModel, Field
 
+from . import limits
 from .flights import serpapi
 from .graph import build_graph
 from .models import Brief
 
 load_dotenv()
 
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+# A Vercel function can only write to /tmp, and that disk is not shared between instances.
+DATA_DIR = Path("/tmp") if os.environ.get("VERCEL") else Path(__file__).resolve().parent.parent / "data"
 STATIC_DIR = Path(os.environ.get("STATIC_DIR", Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"))
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    DATA_DIR.mkdir(exist_ok=True)
-    async with AsyncSqliteSaver.from_conn_string(str(DATA_DIR / "threads.db")) as saver:
+    database_url = os.environ.get("DATABASE_URL")
+    if database_url:
+        # prepare_threshold=0 is required behind Neon's PgBouncer pooler.
+        pool = AsyncConnectionPool(
+            database_url,
+            open=False,
+            min_size=0,
+            max_size=5,
+            check=AsyncConnectionPool.check_connection,
+            kwargs={"autocommit": True, "prepare_threshold": 0, "row_factory": dict_row},
+        )
+        await pool.open()
+        saver = AsyncPostgresSaver(pool)
+        await saver.setup()
+        await limits.setup(pool)
+        app.state.pool = pool
         app.state.graph = build_graph(saver)
         yield
+        await pool.close()
+    else:
+        app.state.pool = None
+        DATA_DIR.mkdir(exist_ok=True)
+        async with AsyncSqliteSaver.from_conn_string(str(DATA_DIR / "threads.db")) as saver:
+            app.state.graph = build_graph(saver)
+            yield
 
 
 app = FastAPI(title="Travel Lust", lifespan=lifespan)
@@ -38,7 +64,7 @@ class TurnRequest(BaseModel):
     thread_id: Optional[str] = None
     currency: Optional[str] = None
     type: str = "text"
-    text: Optional[str] = None
+    text: Optional[str] = Field(None, max_length=1000)
     label: Optional[str] = None
     itinerary_id: Optional[str] = None
     patch: Optional[dict] = None
@@ -59,7 +85,12 @@ async def _pending_card(graph, config) -> Optional[dict]:
 
 @app.get("/api/health")
 async def health():
-    return {"ok": True, "serpapi": bool(serpapi.api_key()), "gemini": bool(os.environ.get("GOOGLE_API_KEY"))}
+    return {
+        "ok": True,
+        "serpapi": bool(serpapi.api_key()),
+        "gemini": bool(os.environ.get("GOOGLE_API_KEY")),
+        "storage": "postgres" if os.environ.get("DATABASE_URL") else "sqlite",
+    }
 
 
 @app.get("/api/threads/{thread_id}")
@@ -76,8 +107,18 @@ async def get_thread(thread_id: str):
     }
 
 
+def _client_ip(request: Request) -> str:
+    # Vercel sets this header itself, so a visitor cannot spoof it there.
+    forwarded = request.headers.get("x-forwarded-for", "")
+    return forwarded.split(",")[0].strip() or (request.client.host if request.client else "unknown")
+
+
 @app.post("/api/turn")
-async def turn(body: TurnRequest):
+async def turn(body: TurnRequest, request: Request):
+    limited = await limits.check(app.state.pool, _client_ip(request))
+    if limited:
+        return JSONResponse({"detail": limited}, status_code=429)
+
     graph = app.state.graph
     thread_id = body.thread_id or uuid.uuid4().hex
     config = {"configurable": {"thread_id": thread_id}}
@@ -113,7 +154,8 @@ async def turn(body: TurnRequest):
     return StreamingResponse(stream(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
-if STATIC_DIR.exists():
+# On Vercel the frontend is its own service, so this only runs for a single-process deploy.
+if STATIC_DIR.exists() and not os.environ.get("VERCEL"):
     app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")
 
     @app.get("/{path:path}")

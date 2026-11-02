@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { loadThread, sendTurn } from './lib/api'
+import { loadThread, RateLimited, sendTurn } from './lib/api'
 import { detectCurrency } from './lib/format'
 import { EMPTY_FILTERS } from './lib/filters'
 import { Button } from '@/components/ui/button'
@@ -99,8 +99,8 @@ export default function App() {
             }
           },
         )
-      } catch {
-        setError('I could not reach the server. Check your connection and try again.')
+      } catch (err) {
+        setError(err instanceof RateLimited ? err.message : 'I could not reach the server. Check your connection and try again.')
       } finally {
         setRunning(false)
         setStatus(null)

@@ -17,7 +17,7 @@ Flights only for now. Hotels and itineraries come next.
 ```bash
 cd server
 python3.12 -m venv venv
-venv/bin/pip install -r requirements.txt
+venv/bin/pip install -r requirements-dev.txt
 GOOGLE_API_KEY=... venv/bin/uvicorn app.main:app --port 8020 --reload
 ```
 
@@ -35,6 +35,13 @@ Open http://localhost:5180.
 cd server
 venv/bin/python -m pytest -q
 ```
+
+## Deploy
+
+It runs on Vercel as two services, set up in `vercel.json`. A push to `main` deploys.
+
+- **Database:** set `DATABASE_URL` to a Postgres URL for saved trips and rate limits. Without it, the app uses local SQLite and has no rate limits.
+- **Keys:** set `GOOGLE_API_KEY`. `SERPAPI_API_KEY` is optional.
 
 ## License
 
