@@ -1,38 +1,41 @@
 # Travel Lust
 
-A multi-agent travel planning application that helps you find destinations, hotels, and create itineraries using AI.
+A travel agent you talk to. Tell it the trip in your own words. It asks for what is missing, shows live fares, and waits for your choice at each step. Then it gives you the link to book.
 
-<img width="1908" height="1626" alt="image" src="https://github.com/user-attachments/assets/736a9cf7-2789-4700-aa06-9221b9eceaf7" />
+Flights only for now. Hotels and itineraries come next.
 
+## How it works
 
-## Project Structure
+- **Agent:** LangGraph, in `server/app/graph.py`. It pauses with `interrupt()` at every choice, and checkpoints let a conversation survive a reload.
+- **Model:** Gemini reads typed messages and turns them into trip details and filters. It never produces a flight fact. Tapping an option costs no Gemini request.
+- **Fares:** live from Google Flights, read directly in `server/app/flights/google.py`. This is unofficial, so it can break if Google changes the page or blocks a server IP.
+- **Sellers:** with `SERPAPI_API_KEY` set, the booking step lists sellers with the cheapest first. SerpApi is also the backup for search. Without the key, the booking link opens the chosen flights on Google Flights.
+- **UI:** React and Tailwind, in `frontend/`.
 
-- `frontend/`: React + Vite frontend application.
-- `backend/`: FastAPI backend with AI agents.
+## Run it
 
-## Getting Started
+```bash
+cd server
+python3.12 -m venv venv
+venv/bin/pip install -r requirements.txt
+GOOGLE_API_KEY=... venv/bin/uvicorn app.main:app --port 8020 --reload
+```
 
-### Prerequisites
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
-- Python 3.10+
-- Node.js 18+
+Open http://localhost:5180.
 
-### Setup
+## Test it
 
-1. **Backend**:
-   ```bash
-   cd backend
-   pip install -r requirements.txt
-   uvicorn main:app --reload
-   ```
-
-2. **Frontend**:
-   ```bash
-   cd frontend
-   npm install
-   npm run dev
-   ```
+```bash
+cd server
+venv/bin/python -m pytest -q
+```
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT. See [LICENSE](LICENSE).
